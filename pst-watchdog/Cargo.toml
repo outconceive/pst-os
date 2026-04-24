@@ -1,0 +1,15 @@
+[package]
+name = "pst-watchdog"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS watchdog — monitors constraint violations, tombstones cycles, enforces deadlines"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }
+proctable = { path = "../proctable" }
+pst-ipc = { path = "../pst-ipc" }
+pst-sched = { path = "../pst-sched" }
