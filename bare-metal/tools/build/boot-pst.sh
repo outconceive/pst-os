@@ -15,7 +15,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILD_DIR="$REPO_ROOT/kernel/build-privos"
 IMAGE_DIR="$REPO_ROOT/tools/image"
-TARGET_DIR="$REPO_ROOT/userspace/target/x86_64-unknown-none/release"
+TARGET_DIR="$REPO_ROOT/target/x86_64-unknown-none/release"
 
 BUILD_ONLY=false
 BOOT_ONLY=false
@@ -98,6 +98,7 @@ if [ "$BUILD_ONLY" = false ]; then
 
     qemu-system-x86_64 \
         -cdrom "$IMAGE_DIR/pst-os.iso" \
+        -cpu qemu64,+pdpe1gb \
         -m 2G \
         -smp 2 \
         -serial stdio \

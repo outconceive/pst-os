@@ -172,46 +172,44 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
     serial_print_hex(fb_vaddr);
     serial_print("...\n");
 
-    // For a 2MB large page, we need PDPT and PD but NOT PT.
-    // Allocate intermediate page tables using the allocator.
+    // For a 2MB large page we need PDPT + PD but NOT PT.
     let mut alloc = unsafe { UntypedAllocator::new(bi) };
-    // Advance allocator past slots we already used
     let skip = (next_slot - bi.empty.start) as usize;
     for _ in 0..skip { alloc.next_slot(); }
 
-    // Allocate and map PDPT for this vaddr region
-    // Manually retype PDPT from RAM untyped via our shim
-    let pdpt_slot = alloc.next_slot();
-    serial_print("[vga] PDPT at slot ");
-    serial_print_num(pdpt_slot as usize);
-    serial_print("\n");
-
-    // Find a RAM untyped and retype PDPT
+    // PDPT: rootserver already has one at PML4[0] covering 0-512GB.
+    // Allocate and try to map; DeleteFirst (8) means it exists — that's fine.
     match alloc.retype(seL4_X86_PDPTObject, seL4_PageBits as seL4_Word) {
         Ok(pdpt_cap) => {
-            serial_print("[vga] PDPT retyped at cap ");
-            serial_print_num(pdpt_cap as usize);
-            serial_print(", mapping...\n");
             let err = unsafe { seL4_X86_PDPT_Map(pdpt_cap, seL4_CapInitThreadVSpace, fb_vaddr, seL4_X86_Default_VMAttributes) };
-            serial_print("[vga] PDPT map result: ");
-            serial_print_num(err as usize);
-            serial_print("\n");
+            if err != seL4_NoError && err != seL4_DeleteFirst {
+                serial_print("[vga] PDPT map error: ");
+                serial_print_num(err as usize);
+                serial_print("\n");
+                return;
+            }
+            serial_print("[vga] PDPT: ");
+            serial_print(if err == seL4_DeleteFirst { "exists\n" } else { "mapped\n" });
         }
         Err(_) => { serial_print("[vga] PDPT retype failed\n"); return; }
     }
 
-    // Allocate and map PD
+    // PD: allocate and map at the PDPT entry for our vaddr
     match alloc.retype(seL4_X86_PageDirectoryObject, seL4_PageBits as seL4_Word) {
         Ok(pd_cap) => {
             let err = unsafe { seL4_X86_PageDirectory_Map(pd_cap, seL4_CapInitThreadVSpace, fb_vaddr, seL4_X86_Default_VMAttributes) };
-            serial_print("[vga] PD alloc OK, map: ");
-            serial_print_num(err as usize);
-            serial_print("\n");
+            if err != seL4_NoError {
+                serial_print("[vga] PD map error: ");
+                serial_print_num(err as usize);
+                serial_print("\n");
+                return;
+            }
+            serial_print("[vga] PD: mapped\n");
         }
-        Err(_) => { serial_print("[vga] PD alloc failed\n"); return; }
+        Err(_) => { serial_print("[vga] PD retype failed\n"); return; }
     }
 
-    // Map the large page directly
+    // Map the 2MB large page directly (no PT needed for large pages)
     let map_err = unsafe {
         seL4_X86_Page_Map(frame_cap, seL4_CapInitThreadVSpace, fb_vaddr,
             seL4_CapRights_t::READ_WRITE, seL4_X86_Default_VMAttributes)
