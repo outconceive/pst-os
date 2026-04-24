@@ -6,6 +6,7 @@ members = [
     "proctable",
     "pst-vfs",
     "pst-ipc",
+    "pst-sched",
 ]
 
 [profile.release]

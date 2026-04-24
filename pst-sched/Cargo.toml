@@ -1,0 +1,14 @@
+[package]
+name = "pst-sched"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS scheduler — constraint solver computing execution order from dependency graphs"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }
+proctable = { path = "../proctable" }
+pst-ipc = { path = "../pst-ipc" }
