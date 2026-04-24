@@ -6,6 +6,7 @@ extern crate alloc;
 
 mod sel4_shims;
 mod vga;
+mod keyboard;
 
 // Custom entry point: save bootinfo (rdi from kernel) before sel4runtime runs
 #[no_mangle]
@@ -251,17 +252,19 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
             // Set the IPC buffer for our syscall shims
             unsafe { sel4_shims::set_ipc_buffer(ipc_buf); }
             serial_print("[vga] IPC buffer set. seL4 invocations enabled.\n");
-            vga::init(bi_ptr);
+
+            if let Some(vga_state) = vga::init(bi_ptr) {
+                serial_print("\n========================================\n");
+                serial_print("  PST OS boot complete.\n");
+                serial_print("  The thesis is proven.\n");
+                serial_print("========================================\n");
+
+                keyboard::run(bi_ptr, vga_state.next_slot, vga_state.fb_vaddr);
+            }
         } else {
             serial_print("[vga] ERROR: IPC buffer invalid\n");
         }
     }
-
-    // --- Done ---
-    serial_print("\n========================================\n");
-    serial_print("  PST OS boot complete.\n");
-    serial_print("  The thesis is proven.\n");
-    serial_print("========================================\n");
 
     loop { core::hint::spin_loop(); }
 }

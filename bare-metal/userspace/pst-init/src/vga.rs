@@ -4,7 +4,12 @@ use crate::sel4_shims;
 use libprivos::mem::UntypedAllocator;
 use libprivos::vm::VSpaceMapper;
 
-pub fn init(bootinfo: *const seL4_BootInfo) {
+pub struct VgaState {
+    pub fb_vaddr: u64,
+    pub next_slot: u64,
+}
+
+pub fn init(bootinfo: *const seL4_BootInfo) -> Option<VgaState> {
     let bi = unsafe { &*bootinfo };
 
     let ut_start = bi.untyped.start as usize;
@@ -32,7 +37,7 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
         serial_print("[vga] IOPortControl failed: ");
         serial_print_num(err as usize);
         serial_print("\n");
-        return;
+        return None;
     }
     serial_print("[vga] PCI port cap OK\n");
 
@@ -68,7 +73,7 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
 
     if vga_bar == 0 {
         serial_print("[vga] No VGA device found\n");
-        return;
+        return None;
     }
 
     // --- Step 3: Find device untyped covering BAR0 ---
@@ -112,7 +117,7 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
                 serial_print_num((1u64 << desc.sizeBits) as usize);
                 serial_print("\n");
             }
-            return;
+            return None;
         }
     };
 
@@ -154,7 +159,7 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
         serial_print("[vga] Large page retype failed: ");
         serial_print_num(err as usize);
         serial_print("\n");
-        return;
+        return None;
     }
 
     let frame_cap = first_page_slot + pages_to_skip as u64;
@@ -186,12 +191,12 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
                 serial_print("[vga] PDPT map error: ");
                 serial_print_num(err as usize);
                 serial_print("\n");
-                return;
+                return None;
             }
             serial_print("[vga] PDPT: ");
             serial_print(if err == seL4_DeleteFirst { "exists\n" } else { "mapped\n" });
         }
-        Err(_) => { serial_print("[vga] PDPT retype failed\n"); return; }
+        Err(_) => { serial_print("[vga] PDPT retype failed\n"); return None; }
     }
 
     // PD: allocate and map at the PDPT entry for our vaddr
@@ -202,11 +207,11 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
                 serial_print("[vga] PD map error: ");
                 serial_print_num(err as usize);
                 serial_print("\n");
-                return;
+                return None;
             }
             serial_print("[vga] PD: mapped\n");
         }
-        Err(_) => { serial_print("[vga] PD retype failed\n"); return; }
+        Err(_) => { serial_print("[vga] PD retype failed\n"); return None; }
     }
 
     // Map the 2MB large page directly (no PT needed for large pages)
@@ -263,14 +268,19 @@ pub fn init(bootinfo: *const seL4_BootInfo) {
                 " No Wayland | No X11 | No display server | Markout -> pixels ", yb);
 
             serial_print("[vga] Desktop on screen!\n");
+
+            let final_slot = alloc.next_slot();
+            return Some(VgaState { fb_vaddr, next_slot: final_slot });
     } else {
         serial_print("[vga] Map failed: ");
         serial_print_num(map_err as usize);
         serial_print("\n");
     }
+
+    None
 }
 
-fn write_str(vga: *mut u8, row: usize, col: usize, s: &str, attr: u8) {
+pub fn write_str(vga: *mut u8, row: usize, col: usize, s: &str, attr: u8) {
     let mut offset = (row * 80 + col) * 2;
     for b in s.bytes() {
         if offset + 1 >= 80 * 25 * 2 { break; }

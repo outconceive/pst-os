@@ -15,7 +15,10 @@ const INV_X86_PDPT_MAP: u64       = 31;
 const INV_X86_PAGE_DIR_MAP: u64   = 33;
 const INV_X86_PAGE_TABLE_MAP: u64 = 35;
 const INV_X86_PAGE_MAP: u64       = 37;
+const INV_IRQ_ACK: u64                  = 27;
+const INV_IRQ_SET_HANDLER: u64          = 28;
 const INV_X86_IOPORT_CONTROL_ISSUE: u64 = 42;
+const INV_X86_IRQ_IOAPIC: u64          = 49;
 
 // msg_info: (label << 12) | (extraCaps << 7) | (length & 0x7f)
 #[inline(always)]
@@ -186,6 +189,63 @@ pub unsafe extern "C" fn seL4_X86_IOPortControl_Issue(
         service,
         msg_info(INV_X86_IOPORT_CONTROL_ISSUE, 1, 4),
         first_port as u64, last_port as u64, dest_index, dest_depth as u64,
+    );
+
+    (info_out >> 12) as seL4_Error
+}
+
+// ---------------------------------------------------------------------------
+// IRQ shims (IOAPIC — CONFIG_IRQ_IOAPIC=1, generic IRQControl_Get won't work)
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "C" fn seL4_IRQControl_GetIOAPIC(
+    service: seL4_CPtr,
+    root: seL4_CPtr,
+    index: seL4_Word,
+    depth: u8,
+    ioapic: seL4_Word,
+    pin: seL4_Word,
+    level: seL4_Word,
+    polarity: seL4_Word,
+    vector: seL4_Word,
+) -> seL4_Error {
+    set_cap(0, root);
+    set_mr(4, level);
+    set_mr(5, polarity);
+    set_mr(6, vector);
+
+    let (info_out, _) = sel4_call(
+        service,
+        msg_info(INV_X86_IRQ_IOAPIC, 1, 7),
+        index, depth as u64, ioapic, pin,
+    );
+
+    (info_out >> 12) as seL4_Error
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn seL4_IRQHandler_SetNotification(
+    service: seL4_CPtr,
+    notification: seL4_CPtr,
+) -> seL4_Error {
+    set_cap(0, notification);
+
+    let (info_out, _) = sel4_call(
+        service,
+        msg_info(INV_IRQ_SET_HANDLER, 1, 0),
+        0, 0, 0, 0,
+    );
+
+    (info_out >> 12) as seL4_Error
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn seL4_IRQHandler_Ack(service: seL4_CPtr) -> seL4_Error {
+    let (info_out, _) = sel4_call(
+        service,
+        msg_info(INV_IRQ_ACK, 0, 0),
+        0, 0, 0, 0,
     );
 
     (info_out >> 12) as seL4_Error
