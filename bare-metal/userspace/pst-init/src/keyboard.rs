@@ -1,6 +1,7 @@
 use sel4_sys::*;
 use crate::{serial_print, serial_print_num};
 use crate::sel4_shims;
+use libprivos::mem::UntypedAllocator;
 
 const PS2_DATA_PORT: u16 = 0x60;
 const PS2_STATUS_PORT: u16 = 0x64;
@@ -30,10 +31,15 @@ static SCANCODE_TO_ASCII: [u8; 128] = {
     t
 };
 
-pub fn run(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) {
+pub struct Keyboard {
+    notif_cap: seL4_CPtr,
+    handler_cap: seL4_CPtr,
+    port_cap: seL4_CPtr,
+}
+
+pub fn setup(bootinfo: *const seL4_BootInfo, mut next_slot: u64) -> Option<Keyboard> {
     let bi = unsafe { &*bootinfo };
 
-    // Issue I/O port cap for keyboard ports 0x60-0x64
     let kb_port_cap = next_slot;
     next_slot += 1;
     let err = unsafe {
@@ -46,21 +52,19 @@ pub fn run(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) {
         serial_print("[kb] Port cap failed: ");
         serial_print_num(err as usize);
         serial_print("\n");
-        return;
+        return None;
     }
     serial_print("[kb] Port cap OK (0x60-0x64)\n");
 
-    // Allocate notification for keyboard IRQ
     let mut alloc = unsafe { UntypedAllocator::new(bi) };
     let skip = (next_slot - bi.empty.start) as usize;
     for _ in 0..skip { alloc.next_slot(); }
 
     let notif_cap = match alloc.create_notification() {
         Ok(cap) => cap,
-        Err(_) => { serial_print("[kb] Notification alloc failed\n"); return; }
+        Err(_) => { serial_print("[kb] Notification alloc failed\n"); return None; }
     };
 
-    // Get IRQ handler via IOAPIC (CONFIG_IRQ_IOAPIC=1)
     let handler_slot = alloc.next_slot();
     let err = unsafe {
         sel4_shims::seL4_IRQControl_GetIOAPIC(
@@ -68,10 +72,10 @@ pub fn run(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) {
             seL4_CapInitThreadCNode,
             handler_slot,
             64,
-            0,                // ioapic 0
-            KEYBOARD_IRQ_PIN, // pin 1
-            0,                // edge triggered
-            0,                // active high
+            0,
+            KEYBOARD_IRQ_PIN,
+            0,
+            0,
             KEYBOARD_VECTOR,
         )
     };
@@ -79,82 +83,33 @@ pub fn run(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) {
         serial_print("[kb] IOAPIC IRQ get failed: ");
         serial_print_num(err as usize);
         serial_print("\n");
-        return;
+        return None;
     }
 
-    // Bind notification to handler
     let err = unsafe { seL4_IRQHandler_SetNotification(handler_slot, notif_cap) };
     if err != seL4_NoError {
         serial_print("[kb] SetNotification failed: ");
         serial_print_num(err as usize);
         serial_print("\n");
-        return;
+        return None;
     }
 
-    serial_print("[kb] Keyboard IRQ registered, entering input loop\n");
-
-    let vga = fb_vaddr as *mut u8;
-    let mut cursor_row: usize = 22;
-    let mut cursor_col: usize = 2;
-    let attr: u8 = 0x0F; // white on black
-
-    // Prompt
-    write_char(vga, cursor_row, cursor_col, b'>', attr);
-    cursor_col += 1;
-    write_char(vga, cursor_row, cursor_col, b' ', attr);
-    cursor_col += 1;
-
-    loop {
-        unsafe { native::sel4_wait_notification(notif_cap) };
-
-        let scancode = unsafe { native::sel4_ioport_in8(kb_port_cap, PS2_DATA_PORT) };
-
-        // Ignore key releases (bit 7 set) and extended scancodes
-        if scancode & 0x80 != 0 || scancode == 0xE0 {
-            unsafe { seL4_IRQHandler_Ack(handler_slot) };
-            continue;
-        }
-
-        let ascii = SCANCODE_TO_ASCII[scancode as usize & 0x7F];
-        if ascii == 0 {
-            unsafe { seL4_IRQHandler_Ack(handler_slot) };
-            continue;
-        }
-
-        if ascii == b'\n' {
-            serial_print("\n");
-            cursor_row += 1;
-            cursor_col = 2;
-            if cursor_row >= 24 { cursor_row = 22; }
-            write_char(vga, cursor_row, cursor_col, b'>', attr);
-            cursor_col += 1;
-            write_char(vga, cursor_row, cursor_col, b' ', attr);
-            cursor_col += 1;
-        } else if ascii == 0x08 {
-            if cursor_col > 4 {
-                cursor_col -= 1;
-                write_char(vga, cursor_row, cursor_col, b' ', attr);
-            }
-        } else {
-            unsafe { crate::debug_putchar(ascii) };
-            if cursor_col < 78 {
-                write_char(vga, cursor_row, cursor_col, ascii, attr);
-                cursor_col += 1;
-            }
-        }
-
-        unsafe { seL4_IRQHandler_Ack(handler_slot) };
-    }
+    serial_print("[kb] Keyboard ready\n");
+    Some(Keyboard { notif_cap, handler_cap: handler_slot, port_cap: kb_port_cap })
 }
 
-fn write_char(vga: *mut u8, row: usize, col: usize, ch: u8, attr: u8) {
-    let offset = (row * 80 + col) * 2;
-    if offset + 1 < 80 * 25 * 2 {
-        unsafe {
-            *vga.add(offset) = ch;
-            *vga.add(offset + 1) = attr;
+impl Keyboard {
+    pub fn read_key(&self) -> u8 {
+        loop {
+            unsafe { native::sel4_wait_notification(self.notif_cap) };
+
+            let scancode = unsafe { native::sel4_ioport_in8(self.port_cap, PS2_DATA_PORT) };
+            unsafe { seL4_IRQHandler_Ack(self.handler_cap) };
+
+            if scancode & 0x80 != 0 || scancode == 0xE0 { continue; }
+
+            let ascii = SCANCODE_TO_ASCII[scancode as usize & 0x7F];
+            if ascii != 0 { return ascii; }
         }
     }
 }
-
-use libprivos::mem::UntypedAllocator;

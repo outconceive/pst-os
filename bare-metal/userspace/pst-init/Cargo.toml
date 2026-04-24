@@ -14,5 +14,6 @@ sel4-sys = { path = "../bindings/sel4-sys" }
 libpst = { path = "../../../libpst" }
 pst-markout = { path = "../../../pst-markout" }
 pst-framebuffer = { path = "../../../pst-framebuffer" }
+pst-terminal = { path = "../../../pst-terminal" }
 proctable = { path = "../../../proctable" }
 pst-offset = { path = "../../../pst-offset" }

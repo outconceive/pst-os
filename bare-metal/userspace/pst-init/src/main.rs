@@ -7,6 +7,7 @@ extern crate alloc;
 mod sel4_shims;
 mod vga;
 mod keyboard;
+mod shell;
 
 // Custom entry point: save bootinfo (rdi from kernel) before sel4runtime runs
 #[no_mangle]
@@ -257,9 +258,11 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
                 serial_print("\n========================================\n");
                 serial_print("  PST OS boot complete.\n");
                 serial_print("  The thesis is proven.\n");
-                serial_print("========================================\n");
+                serial_print("========================================\n\n");
 
-                keyboard::run(bi_ptr, vga_state.next_slot, vga_state.fb_vaddr);
+                if let Some(kb) = keyboard::setup(bi_ptr, vga_state.next_slot) {
+                    shell::run(&kb);
+                }
             }
         } else {
             serial_print("[vga] ERROR: IPC buffer invalid\n");
