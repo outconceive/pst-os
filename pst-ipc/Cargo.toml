@@ -1,0 +1,12 @@
+[package]
+name = "pst-ipc"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS inter-process communication — append-only event log with constraint-driven delivery"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }

@@ -5,6 +5,7 @@ members = [
     "libpst",
     "proctable",
     "pst-vfs",
+    "pst-ipc",
 ]
 
 [profile.release]
