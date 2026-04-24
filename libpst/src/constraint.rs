@@ -4,13 +4,29 @@ use alloc::vec::Vec;
 
 #[derive(Debug, Clone)]
 pub struct GapValue {
-    pub ticks: u64,
+    pub pixels: f64,
     pub raw: String,
 }
 
 impl GapValue {
     pub fn from_ticks(t: u64) -> Self {
-        Self { ticks: t, raw: String::new() }
+        Self { pixels: t as f64, raw: String::new() }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        if let Some(rest) = s.strip_suffix("rem") {
+            let n: f64 = rest.parse().ok()?;
+            Some(Self { pixels: n * 16.0, raw: String::from(s) })
+        } else if let Some(rest) = s.strip_suffix("em") {
+            let n: f64 = rest.parse().ok()?;
+            Some(Self { pixels: n * 16.0, raw: String::from(s) })
+        } else if let Some(rest) = s.strip_suffix("px") {
+            let n: f64 = rest.parse().ok()?;
+            Some(Self { pixels: n, raw: String::from(s) })
+        } else {
+            let n: f64 = s.parse().ok()?;
+            Some(Self { pixels: n, raw: { let mut r = String::from(s); r.push_str("px"); r } })
+        }
     }
 }
 

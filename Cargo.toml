@@ -10,6 +10,7 @@ members = [
     "pst-watchdog",
     "pst-mem",
     "pst-offset",
+    "pst-markout",
     "pst-integration",
 ]
 

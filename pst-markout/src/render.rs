@@ -1,0 +1,403 @@
+use alloc::collections::BTreeMap;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+
+use crate::parse::{self, Line, LineType};
+use crate::vnode::VNode;
+
+use libpst::constraint::{Constraint, GapValue};
+
+pub fn render(lines: &[Line]) -> VNode {
+    let mut root_children = Vec::new();
+    let mut container_stack: Vec<(String, BTreeMap<String, String>, Vec<VNode>)> = Vec::new();
+    let mut parametric_stack: Vec<(BTreeMap<String, String>, Vec<Line>)> = Vec::new();
+
+    for line in lines {
+        // Collecting inside @parametric
+        if !parametric_stack.is_empty() {
+            if line.line_type == LineType::ContainerEnd {
+                if line.tag.as_deref() == Some("parametric") {
+                    let (attrs, collected) = parametric_stack.pop().unwrap();
+                    let parametric_node = render_parametric(&collected, attrs);
+                    if let Some(parent) = container_stack.last_mut() {
+                        parent.2.push(parametric_node);
+                    } else {
+                        root_children.push(parametric_node);
+                    }
+                    continue;
+                }
+            }
+            parametric_stack.last_mut().unwrap().1.push(line.clone());
+            continue;
+        }
+
+        if line.line_type == LineType::ContainerStart {
+            let tag = line.tag.as_deref().unwrap_or("div");
+
+            if tag == "parametric" {
+                let mut attrs = BTreeMap::new();
+                attrs.insert(String::from("class"), String::from("mc-parametric"));
+                parametric_stack.push((attrs, Vec::new()));
+                continue;
+            }
+
+            let mut attrs = BTreeMap::new();
+            attrs.insert(String::from("class"), format!("mc-{}", tag));
+            container_stack.push((String::from(tag), attrs, Vec::new()));
+            continue;
+        }
+
+        if line.line_type == LineType::ContainerEnd {
+            if let Some((tag, attrs, children)) = container_stack.pop() {
+                let el_tag = semantic_tag(&tag);
+                let container = VNode::element_with_attrs(el_tag, attrs, children);
+                if let Some(parent) = container_stack.last_mut() {
+                    parent.2.push(container);
+                } else {
+                    root_children.push(container);
+                }
+            }
+            continue;
+        }
+
+        let row = render_line(line);
+        if let Some(parent) = container_stack.last_mut() {
+            parent.2.push(row);
+        } else {
+            root_children.push(row);
+        }
+    }
+
+    let mut root_attrs = BTreeMap::new();
+    root_attrs.insert(String::from("class"), String::from("mc-app"));
+    VNode::element_with_attrs("div", root_attrs, root_children)
+}
+
+fn render_line(line: &Line) -> VNode {
+    let mut children = Vec::new();
+    let content: Vec<char> = line.content.chars().collect();
+    let comps: Vec<char> = line.components.chars().collect();
+    let keys: Vec<char> = line.state_keys.chars().collect();
+    let len = content.len();
+
+    if len == 0 {
+        children.push(VNode::element("br", Vec::new()));
+    } else {
+        let mut i = 0;
+        while i < len {
+            let comp = *comps.get(i).unwrap_or(&parse::EMPTY);
+            let start = i;
+            i += 1;
+            while i < len && comps.get(i) == Some(&comp) { i += 1; }
+
+            let span_content: String = content[start..i].iter().collect();
+            let span_key: String = keys[start..i.min(keys.len())].iter().collect::<String>()
+                .trim_matches('_').to_string();
+
+            let mut attrs = BTreeMap::new();
+            attrs.insert(String::from("class"), css_class(comp));
+            if !span_key.is_empty() {
+                attrs.insert(String::from("data-bind"), span_key);
+            }
+
+            match comp {
+                parse::TEXT_INPUT | parse::PASSWORD => {
+                    let input_type = if comp == parse::PASSWORD { "password" } else { "text" };
+                    attrs.insert(String::from("type"), String::from(input_type));
+                    children.push(VNode::element_with_attrs("input", attrs, Vec::new()));
+                }
+                parse::BUTTON => {
+                    let label = span_content.trim();
+                    if let Some(key) = attrs.get("data-bind") {
+                        attrs.insert(String::from("data-action"), key.clone());
+                    }
+                    children.push(VNode::element_with_attrs("button", attrs, vec![VNode::text(label)]));
+                }
+                parse::CHECKBOX => {
+                    attrs.insert(String::from("type"), String::from("checkbox"));
+                    children.push(VNode::element_with_attrs("input", attrs, Vec::new()));
+                }
+                parse::DIVIDER => {
+                    children.push(VNode::element_with_attrs("hr", attrs, Vec::new()));
+                }
+                _ => {
+                    children.push(VNode::element_with_attrs("span", attrs, vec![VNode::text(&span_content)]));
+                }
+            }
+        }
+    }
+
+    let mut row_attrs = BTreeMap::new();
+    row_attrs.insert(String::from("class"), String::from("mc-row"));
+    VNode::element_with_attrs("div", row_attrs, children)
+}
+
+fn render_parametric(lines: &[Line], mut container_attrs: BTreeMap<String, String>) -> VNode {
+    // Collect elements with their constraints
+    let mut elements: Vec<(String, char, String, Vec<Constraint>)> = Vec::new();
+    let mut anon = 0usize;
+
+    for line in lines {
+        let comps: Vec<char> = line.components.chars().collect();
+        let keys: Vec<char> = line.state_keys.chars().collect();
+        let content: Vec<char> = line.content.chars().collect();
+
+        let mut i = 0;
+        while i < comps.len() {
+            let comp = comps[i];
+            let start = i;
+            i += 1;
+            while i < comps.len() && comps[i] == comp { i += 1; }
+
+            let name: String = keys[start..i.min(keys.len())].iter().collect::<String>()
+                .trim_matches('_').to_string();
+            let name = if name.is_empty() {
+                let n = format!("_anon_{}", anon);
+                anon += 1;
+                n
+            } else {
+                name
+            };
+
+            let span_content: String = content[start..i.min(content.len())].iter().collect();
+
+            let raw_constraints = line.constraints.get(&start)
+                .cloned()
+                .unwrap_or_default();
+            let constraints: Vec<Constraint> = raw_constraints.iter()
+                .filter_map(|s| parse_markout_constraint(s))
+                .collect();
+
+            elements.push((name, comp, span_content, constraints));
+        }
+    }
+
+    // Solve using libpst
+    use libpst::solver::{ConstrainedNode, topological_sort, CycleAction};
+
+    let nodes: Vec<ConstrainedNode> = elements.iter().map(|(name, _, _, constraints)| {
+        ConstrainedNode {
+            name: name.clone(),
+            constraints: constraints.clone(),
+            priority: 0,
+        }
+    }).collect();
+
+    let result = topological_sort(&nodes, CycleAction::Break);
+
+    // Compute positions (simplified solver for spatial constraints)
+    let mut solved: BTreeMap<String, (f64, f64, f64, f64)> = BTreeMap::new(); // x, y, w, h
+
+    for name in &result.order {
+        let el = match elements.iter().find(|(n, _, _, _)| n == name) {
+            Some(e) => e,
+            None => continue,
+        };
+
+        let (_, comp, ref content, ref constraints) = *el;
+        let (def_w, def_h) = intrinsic_size(comp, content.trim().len());
+        let mut x = 0.0f64;
+        let mut y = 0.0f64;
+        let mut w = def_w;
+        let mut h = def_h;
+
+        let first_ref: Option<String> = constraints.iter()
+            .flat_map(|c| c.references())
+            .next()
+            .map(|s| String::from(s));
+
+        for c in constraints {
+            match c {
+                Constraint::Left(r) => { if let Some(&(rx, _, _, _)) = solved.get(r) { x = rx; } }
+                Constraint::Right(r) => { if let Some(&(rx, _, rw, _)) = solved.get(r) { x = rx + rw - w; } }
+                Constraint::Top(r) => { if let Some(&(_, ry, _, _)) = solved.get(r) { y = ry; } }
+                Constraint::Bottom(r) => { if let Some(&(_, ry, _, rh)) = solved.get(r) { y = ry + rh - h; } }
+                Constraint::CenterX(r) => { if let Some(&(rx, _, rw, _)) = solved.get(r) { x = rx + rw / 2.0 - w / 2.0; } }
+                Constraint::CenterY(r) => { if let Some(&(_, ry, _, rh)) = solved.get(r) { y = ry + rh / 2.0 - h / 2.0; } }
+                Constraint::GapX(gap, ref_opt) => {
+                    let r = ref_opt.as_ref().or(first_ref.as_ref());
+                    if let Some(rr) = r.and_then(|n| solved.get(n.as_str())) {
+                        x = rr.0 + rr.2 + gap.pixels;
+                    }
+                }
+                Constraint::GapY(gap, ref_opt) => {
+                    let r = ref_opt.as_ref().or(first_ref.as_ref());
+                    if let Some(rr) = r.and_then(|n| solved.get(n.as_str())) {
+                        y = rr.1 + rr.3 + gap.pixels;
+                    }
+                }
+                Constraint::MatchWidth(r) => { if let Some(&(_, _, rw, _)) = solved.get(r) { w = rw; } }
+                Constraint::MatchHeight(r) => { if let Some(&(_, _, _, rh)) = solved.get(r) { h = rh; } }
+                _ => {}
+            }
+        }
+
+        // Stretch between left: and right:
+        let left_ref = constraints.iter().find_map(|c| match c { Constraint::Left(r) => Some(r.as_str()), _ => None });
+        let right_ref = constraints.iter().find_map(|c| match c { Constraint::Right(r) => Some(r.as_str()), _ => None });
+        if let (Some(lr), Some(rr)) = (left_ref, right_ref) {
+            if let (Some(l), Some(r)) = (solved.get(lr), solved.get(rr)) {
+                x = l.0;
+                w = (r.0 + r.2) - l.0;
+            }
+        }
+
+        solved.insert(name.clone(), (x, y, w, h));
+    }
+
+    // Compute container bounds
+    let mut max_x = 0.0f64;
+    let mut max_y = 0.0f64;
+    for (_, &(x, y, w, h)) in &solved {
+        let right = x + w;
+        let bottom = y + h;
+        if right > max_x { max_x = right; }
+        if bottom > max_y { max_y = bottom; }
+    }
+
+    container_attrs.insert(
+        String::from("style"),
+        format!("position:relative;width:{:.1}px;height:{:.1}px", max_x, max_y),
+    );
+
+    // Build children
+    let mut children = Vec::new();
+    for (name, comp, ref content, _) in &elements {
+        if let Some(&(x, y, w, h)) = solved.get(name) {
+            let mut wrapper_attrs = BTreeMap::new();
+            wrapper_attrs.insert(
+                String::from("style"),
+                format!("position:absolute;left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", x, y, w, h),
+            );
+            wrapper_attrs.insert(String::from("data-parametric"), name.clone());
+
+            let mut inner_attrs = BTreeMap::new();
+            inner_attrs.insert(String::from("class"), css_class(*comp));
+            inner_attrs.insert(String::from("data-bind"), name.clone());
+
+            let inner = match comp {
+                &parse::TEXT_INPUT | &parse::PASSWORD => {
+                    let t = if *comp == parse::PASSWORD { "password" } else { "text" };
+                    inner_attrs.insert(String::from("type"), String::from(t));
+                    VNode::element_with_attrs("input", inner_attrs, Vec::new())
+                }
+                &parse::BUTTON => {
+                    inner_attrs.insert(String::from("data-action"), name.clone());
+                    VNode::element_with_attrs("button", inner_attrs, vec![VNode::text(content.trim())])
+                }
+                &parse::DIVIDER => VNode::element_with_attrs("hr", inner_attrs, Vec::new()),
+                _ => VNode::element_with_attrs("span", inner_attrs, vec![VNode::text(content.trim())]),
+            };
+
+            children.push(VNode::element_with_attrs("div", wrapper_attrs, vec![inner]));
+        }
+    }
+
+    VNode::element_with_attrs("div", container_attrs, children)
+}
+
+fn parse_markout_constraint(s: &str) -> Option<Constraint> {
+    if let Some(r) = s.strip_prefix("left:") { return Some(Constraint::Left(String::from(r))); }
+    if let Some(r) = s.strip_prefix("right:") { return Some(Constraint::Right(String::from(r))); }
+    if let Some(r) = s.strip_prefix("top:") { return Some(Constraint::Top(String::from(r))); }
+    if let Some(r) = s.strip_prefix("bottom:") { return Some(Constraint::Bottom(String::from(r))); }
+    if let Some(r) = s.strip_prefix("center-x:") { return Some(Constraint::CenterX(String::from(r))); }
+    if let Some(r) = s.strip_prefix("center-y:") { return Some(Constraint::CenterY(String::from(r))); }
+    if let Some(rest) = s.strip_prefix("gap-x:") { return parse_gap_constraint(rest, false); }
+    if let Some(rest) = s.strip_prefix("gap-y:") { return parse_gap_constraint(rest, true); }
+    if let Some(r) = s.strip_prefix("width:") { return Some(Constraint::MatchWidth(String::from(r))); }
+    if let Some(r) = s.strip_prefix("height:") { return Some(Constraint::MatchHeight(String::from(r))); }
+    None
+}
+
+fn parse_gap_constraint(rest: &str, vertical: bool) -> Option<Constraint> {
+    let parts: Vec<&str> = rest.splitn(2, ':').collect();
+    let gap = GapValue::from_str(parts[0])?;
+    let reference = parts.get(1).map(|s| String::from(*s));
+    if vertical {
+        Some(Constraint::GapY(gap, reference))
+    } else {
+        Some(Constraint::GapX(gap, reference))
+    }
+}
+
+fn intrinsic_size(comp: char, content_len: usize) -> (f64, f64) {
+    match comp {
+        parse::TEXT_INPUT | parse::PASSWORD => (200.0, 36.0),
+        parse::BUTTON => ((content_len as f64 * 9.0).max(80.0), 36.0),
+        parse::CHECKBOX => (20.0, 20.0),
+        parse::DIVIDER => (400.0, 1.0),
+        parse::SPACER => (0.0, 0.0),
+        _ => ((content_len as f64 * 8.0).max(20.0), 24.0),
+    }
+}
+
+fn css_class(comp: char) -> String {
+    String::from(match comp {
+        parse::LABEL => "mc-label",
+        parse::TEXT_INPUT => "mc-input",
+        parse::PASSWORD => "mc-input-password",
+        parse::BUTTON => "mc-button",
+        parse::CHECKBOX => "mc-checkbox",
+        parse::DIVIDER => "mc-divider",
+        parse::SPACER => "mc-spacer",
+        _ => "mc-label",
+    })
+}
+
+fn semantic_tag(tag: &str) -> &str {
+    match tag {
+        "nav" => "nav",
+        "header" => "header",
+        "footer" => "footer",
+        "main" => "main",
+        "section" => "section",
+        "aside" => "aside",
+        "form" => "form",
+        _ => "div",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse;
+
+    #[test]
+    fn test_render_label() {
+        let lines = parse::parse("| Hello");
+        let vdom = render(&lines);
+        assert_eq!(vdom.tag(), Some("div"));
+        assert_eq!(vdom.children().len(), 1);
+    }
+
+    #[test]
+    fn test_render_container() {
+        let lines = parse::parse("@card\n| Inside\n@end card");
+        let vdom = render(&lines);
+        let card = &vdom.children()[0];
+        assert_eq!(card.tag(), Some("div"));
+    }
+
+    #[test]
+    fn test_render_parametric() {
+        let input = "@parametric\n| {label:title \"Dashboard\"}\n| {input:search center-x:title gap-y:16}\n@end parametric";
+        let lines = parse::parse(input);
+        let vdom = render(&lines);
+
+        let parametric = &vdom.children()[0];
+        assert_eq!(parametric.tag(), Some("div"));
+
+        // Should have positioned children
+        let children = parametric.children();
+        assert!(children.len() >= 2);
+
+        // Each child should have position:absolute in style
+        if let VNode::Element(el) = &children[0] {
+            let style = el.attrs.get("style").unwrap();
+            assert!(style.contains("position:absolute"));
+        }
+    }
+}

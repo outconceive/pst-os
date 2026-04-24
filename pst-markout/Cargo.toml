@@ -1,0 +1,12 @@
+[package]
+name = "pst-markout"
+version = "0.1.0"
+edition = "2021"
+description = "Markout parser + renderer for bare metal — Outconceive on PST OS"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }
