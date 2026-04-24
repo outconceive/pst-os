@@ -8,7 +8,7 @@
  * by userspace/init/build.rs (and future build.rs files for other services).
  */
 
-ENTRY(_sel4_start)
+ENTRY(_pst_entry)
 
 SECTIONS {
     . = 0x400000;

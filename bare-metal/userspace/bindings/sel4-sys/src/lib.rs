@@ -69,12 +69,13 @@ pub const seL4_CapTableObject: seL4_Word = 4;
 // Numbering continues from seL4_NonArchObjectTypeCount = 5.
 // ---------------------------------------------------------------------------
 
-pub const seL4_X86_4K: seL4_Word = 5;               // 4 KiB page frame
-pub const seL4_X86_LargePage: seL4_Word = 6;         // 2 MiB large page
-pub const seL4_X86_PageTableObject: seL4_Word = 7;   // page table (PT)
-pub const seL4_X86_PageDirectoryObject: seL4_Word = 8; // page directory (PD)
-pub const seL4_X86_PDPTObject: seL4_Word = 9;        // page directory pointer table
-pub const seL4_X86_PML4Object: seL4_Word = 10;       // top-level paging structure (VSpace root)
+pub const seL4_X86_PDPTObject: seL4_Word = 5;        // page directory pointer table
+pub const seL4_X86_PML4Object: seL4_Word = 6;        // PML4 (VSpace root, x86_64)
+pub const seL4_X86_4K: seL4_Word = 7;               // 4 KiB page frame
+pub const seL4_X86_LargePage: seL4_Word = 8;         // 2 MiB large page
+pub const seL4_X86_PageTableObject: seL4_Word = 9;   // page table (PT)
+pub const seL4_X86_PageDirectoryObject: seL4_Word = 10; // page directory (PD)
+// PML4Object defined above with correct value 6
 
 // ---------------------------------------------------------------------------
 // Object size bits (log2 of the object size in bytes)

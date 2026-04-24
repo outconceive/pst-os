@@ -61,22 +61,22 @@ unsafe fn sel4_call(
     let mr0_out:  u64;
 
     core::arch::asm!(
+        "mov {save}, rsp",
         "syscall",
-        // Inputs
+        "mov rsp, {save}",
+        save = out(reg) _,
         in("rdx") SYS_CALL,
-        inout("rdi") cap  => _,         // in = dest cap, out = badge (discard)
+        inout("rdi") cap  => _,
         inout("rsi") info_in => info_out,
         inout("r10") mr0  => mr0_out,
         in("r8")  mr1,
         in("r9")  mr2,
         in("r15") mr3,
-        // Clobbers: syscall saves rcx=rip, r11=rflags; kernel preserves rsp.
         out("rcx") _,
         lateout("r8")  _,
         lateout("r9")  _,
         lateout("r15") _,
         lateout("r11") _,
-        options(nostack),
     );
     (info_out, mr0_out)
 }

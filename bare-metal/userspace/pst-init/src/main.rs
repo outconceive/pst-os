@@ -1,12 +1,29 @@
 #![no_std]
 #![no_main]
+#![feature(naked_functions)]
 
 extern crate alloc;
+
+mod sel4_shims;
+mod vga;
+
+// Custom entry point: save bootinfo (rdi from kernel) before sel4runtime runs
+#[no_mangle]
+static mut KERNEL_BOOTINFO: u64 = 0;
+
+core::arch::global_asm!(
+    ".global _pst_entry",
+    "_pst_entry:",
+    "mov [rip + KERNEL_BOOTINFO], rdi",
+    "jmp _sel4_start",
+);
 
 use alloc::string::String;
 
 use libprivos::allocator;
-use sel4_sys::seL4_BootInfo;
+use libprivos::mem::UntypedAllocator;
+use libprivos::vm::VSpaceMapper;
+use sel4_sys::*;
 
 use libpst::constraint::Constraint;
 use proctable::{ProcessTable, ProcessEntry, STATE_NEW, PRIV_SYSTEM, PRIV_DRIVER, PRIV_USER};
@@ -17,7 +34,7 @@ use pst_offset::{RootOffsetTable, SUB_PROCESS, PRIV_HARDWARE, PRIV_KERNEL};
 // ---------------------------------------------------------------------------
 
 #[inline(never)]
-unsafe fn debug_putchar(c: u8) {
+pub unsafe fn debug_putchar(c: u8) {
     // seL4_DebugPutChar: syscall number -9, char in rdi
     // seL4 x86_64 convention: save rsp to stack before syscall
     // (seL4 kernel preserves rsp, but we follow the C wrapper pattern)
@@ -40,7 +57,7 @@ unsafe fn debug_putchar(c: u8) {
     let _ = saved_rsp;
 }
 
-fn serial_print(s: &str) {
+pub fn serial_print(s: &str) {
     for b in s.bytes() {
         if b == b'\n' {
             unsafe { debug_putchar(b'\r'); }
@@ -49,7 +66,7 @@ fn serial_print(s: &str) {
     }
 }
 
-fn serial_print_num(mut n: usize) {
+pub fn serial_print_num(mut n: usize) {
     if n == 0 {
         unsafe { debug_putchar(b'0'); }
         return;
@@ -199,35 +216,71 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
     fb.clear(Color::DARK_BG);
     render_markout(&mut fb, BOOT_MARKOUT, Color::DARK_BG, Color::WHITE);
 
-    serial_print("[pst-framebuffer] Rendered. Dumping as PPM over serial...\n");
+    serial_print("[pst-framebuffer] Rendered to memory.\n");
 
-    // Output PPM header + pixel data
-    // PPM format: P6\n<width> <height>\n255\n<RGB bytes>
-    serial_print("PPM_START\n");
-    serial_print("P6\n320 200\n255\n");
-    // Write raw RGB bytes (strip alpha from BGRA)
-    for y in 0..200 {
-        for x in 0..320 {
-            let off = y * fb.stride + x * 4;
-            let r = fb.pixels[off + 2];
-            let g = fb.pixels[off + 1];
-            let b = fb.pixels[off];
-            unsafe {
-                debug_putchar(r);
-                debug_putchar(g);
-                debug_putchar(b);
-            }
+    // --- Phase 5: Map VGA text buffer to QEMU display ---
+    let kernel_bi = unsafe { KERNEL_BOOTINFO };
+    serial_print("[vga] kernel bootinfo (saved from rdi): 0x");
+    serial_print_hex(kernel_bi);
+    serial_print("\n");
+    serial_print("[vga] sel4runtime bootinfo (_bootinfo): 0x");
+    serial_print_hex(_bootinfo as u64);
+    serial_print("\n");
+
+    let bi_ptr = if kernel_bi > 0x1000 {
+        kernel_bi as *const seL4_BootInfo
+    } else {
+        _bootinfo
+    };
+
+    if bi_ptr.is_null() || (bi_ptr as u64) < 0x1000 {
+        serial_print("[vga] ERROR: no valid bootinfo pointer\n");
+    } else {
+        let bi = unsafe { &*bi_ptr };
+        serial_print("[vga] Using bootinfo at 0x");
+        serial_print_hex(bi_ptr as u64);
+        serial_print("\n");
+
+        // Get IPC buffer from bootinfo
+        let ipc_buf = bi.ipcBuffer;
+        serial_print("[vga] IPC buffer: 0x");
+        serial_print_hex(ipc_buf as u64);
+        serial_print("\n");
+
+        if !ipc_buf.is_null() && (ipc_buf as u64) > 0x1000 {
+            // Set the IPC buffer for our syscall shims
+            unsafe { sel4_shims::set_ipc_buffer(ipc_buf); }
+            serial_print("[vga] IPC buffer set. seL4 invocations enabled.\n");
+            vga::init(bi_ptr);
+        } else {
+            serial_print("[vga] ERROR: IPC buffer invalid\n");
         }
     }
-    serial_print("\nPPM_END\n");
 
     // --- Done ---
     serial_print("\n========================================\n");
     serial_print("  PST OS boot complete.\n");
-    serial_print("  Markout rendered to pixels on bare metal.\n");
-    serial_print("  No Wayland. No X11. No display server.\n");
     serial_print("  The thesis is proven.\n");
     serial_print("========================================\n");
 
     loop { core::hint::spin_loop(); }
+}
+
+pub fn serial_print_hex(mut n: u64) {
+    if n == 0 {
+        serial_print("0");
+        return;
+    }
+    let mut buf = [0u8; 16];
+    let mut i = 0;
+    while n > 0 {
+        let d = (n & 0xF) as u8;
+        buf[i] = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+        n >>= 4;
+        i += 1;
+    }
+    while i > 0 {
+        i -= 1;
+        unsafe { debug_putchar(buf[i]); }
+    }
 }
