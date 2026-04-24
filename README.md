@@ -133,6 +133,43 @@ cargo test --target x86_64-pc-windows-msvc
 - `test_identity_never_changes` — file ID survives 10 create/delete/compact cycles
 - `test_ls_prefix_scan` — directory listing is a string scan, not a tree walk
 
+## Boot proof
+
+PST OS boots on the seL4 microkernel and renders Markout from a cold boot:
+
+```
+Booting all finished, dropped to user space
+PST
+
+========================================
+  Parallel String Theory OS
+  Booting on seL4 microkernel...
+========================================
+
+[pst-offset] Creating immortal root...
+[pst-offset] Position 0: bootloader (HARDWARE)
+[pst-offset] Position 1: solver (KERNEL)
+[pst-offset] Immortal root: 2 positions
+
+[proctable] 6 services registered
+[pst-sched] Boot order: cryptod -> driverd -> netd -> vfs -> driver-nic -> compositor
+[pst-sched] No cycles detected
+
+[pst-markout] Parsed 12 lines
+[pst-markout] Rendering to VDOM...
+[pst-markout] HTML output (964 bytes):
+
+<div class="mc-app"><div class="mc-card">...</div></div>
+
+========================================
+  PST OS boot complete.
+  Markout rendered on bare metal.
+  The thesis is proven.
+========================================
+```
+
+159KB static ELF. x86_64. seL4 microkernel. Serial output via `seL4_DebugPutChar`. Process table, constraint solver, Markout parser, parametric renderer, and HTML serializer — all running on bare metal in `no_std` Rust.
+
 ## Origin
 
 PST OS started as [Outconceive UI](https://github.com/outconceive/ui), a web framework that replaced virtual DOM trees with flat parallel strings. The framework proved that positional identity eliminates the need for hierarchical data structures in UI rendering. PST OS extends that principle to an entire operating system.
