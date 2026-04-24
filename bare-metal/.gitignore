@@ -1,0 +1,6 @@
+target/
+kernel/
+Cargo.lock
+userspace/.cargo/
+tools/image/*.iso
+tools/image/*.sha256

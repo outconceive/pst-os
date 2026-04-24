@@ -1,0 +1,18 @@
+[package]
+name = "pst-init"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS root server — constraint-solved boot + Markout rendering on bare metal"
+
+[[bin]]
+name = "pst-init"
+path = "src/main.rs"
+
+[dependencies]
+libprivos = { path = "../libprivos", features = ["global-allocator"] }
+sel4-sys = { path = "../bindings/sel4-sys" }
+libpst = { path = "../../../libpst" }
+pst-markout = { path = "../../../pst-markout" }
+pst-framebuffer = { path = "../../../pst-framebuffer" }
+proctable = { path = "../../../proctable" }
+pst-offset = { path = "../../../pst-offset" }

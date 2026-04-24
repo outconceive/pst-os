@@ -1,0 +1,17 @@
+[package]
+name = "pst-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "Bridge between PST OS parallel string subsystems and seL4 microkernel"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../../../libpst" }
+proctable = { path = "../../../proctable" }
+pst-sched = { path = "../../../pst-sched" }
+pst-offset = { path = "../../../pst-offset" }
+libprivos = { path = "../libprivos", default-features = false, features = ["alloc"] }
+sel4-sys = { path = "../bindings/sel4-sys" }

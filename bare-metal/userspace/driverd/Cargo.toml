@@ -1,0 +1,11 @@
+[package]
+name = "driverd"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "driverd"
+path = "src/main.rs"
+
+[dependencies]
+sel4-sys = { path = "../bindings/sel4-sys" }

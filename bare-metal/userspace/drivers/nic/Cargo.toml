@@ -1,0 +1,11 @@
+[package]
+name = "driver-nic"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "driver-nic"
+path = "src/main.rs"
+
+[dependencies]
+sel4-sys = { path = "../../bindings/sel4-sys" }

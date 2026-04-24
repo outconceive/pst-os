@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "userspace/pst-bridge",
+    "userspace/pst-init",
+    "userspace/libprivos",
+    "userspace/bindings/sel4-sys",
+    "userspace/init",
+    "userspace/vfs",
+    "userspace/netd",
+    "userspace/cryptod",
+    "userspace/driverd",
+    "userspace/drivers/nic",
+    "userspace/drivers/nvme",
+    "userspace/drivers/usb",
+    "userspace/drivers/gpu",
+    "userspace/desktop/compositor",
+    "userspace/desktop/shell",
+]
+
+[profile.release]
+opt-level = "z"      # Minimize binary size for embedded/kernel context
+lto = true
+codegen-units = 1
+panic = "abort"      # No unwinding in a no_std OS — abort is correct
+
+[profile.dev]
+panic = "abort"

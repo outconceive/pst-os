@@ -1,0 +1,12 @@
+[package]
+name = "compositor"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "compositor"
+path = "src/main.rs"
+
+[dependencies]
+sel4-sys = { path = "../../bindings/sel4-sys" }
+# libprivos and smithay added in Phase 8 once Wayland compositor work begins

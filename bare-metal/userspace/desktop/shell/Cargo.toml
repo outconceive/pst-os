@@ -1,0 +1,12 @@
+[package]
+name = "shell"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "shell"
+path = "src/main.rs"
+
+[dependencies]
+sel4-sys = { path = "../../bindings/sel4-sys" }
+# libprivos added in Phase 9 when shell logic is implemented
