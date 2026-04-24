@@ -1,0 +1,12 @@
+[package]
+name = "pst-terminal"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS terminal renderer — Markout to ANSI escape sequences. The Ink of Outconceive."
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+pst-markout = { path = "../pst-markout" }
