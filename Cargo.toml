@@ -9,6 +9,7 @@ members = [
     "pst-sched",
     "pst-watchdog",
     "pst-mem",
+    "pst-integration",
 ]
 
 [profile.release]

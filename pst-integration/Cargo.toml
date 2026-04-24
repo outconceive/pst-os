@@ -1,0 +1,18 @@
+[package]
+name = "pst-integration"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS integration tests — subsystems wired together as a running system"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }
+proctable = { path = "../proctable" }
+pst-vfs = { path = "../pst-vfs" }
+pst-ipc = { path = "../pst-ipc" }
+pst-sched = { path = "../pst-sched" }
+pst-watchdog = { path = "../pst-watchdog" }
+pst-mem = { path = "../pst-mem" }
