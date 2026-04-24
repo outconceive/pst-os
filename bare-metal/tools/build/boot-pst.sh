@@ -96,8 +96,16 @@ if [ "$BUILD_ONLY" = false ]; then
     echo "    (serial output on stdio, Ctrl+A X to quit)"
     echo ""
 
+    # Create persistence disk if it doesn't exist
+    DISK="$IMAGE_DIR/pst-disk.img"
+    if [ ! -f "$DISK" ]; then
+        dd if=/dev/zero of="$DISK" bs=1M count=1 2>/dev/null
+        echo "[ok] Created 1MB persistence disk"
+    fi
+
     qemu-system-x86_64 \
         -cdrom "$IMAGE_DIR/pst-os.iso" \
+        -drive file="$DISK",format=raw,if=virtio \
         -cpu qemu64,+pdpe1gb \
         -m 2G \
         -smp 2 \

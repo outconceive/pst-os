@@ -10,6 +10,7 @@ const KEYBOARD_VECTOR: u64 = 33;
 
 static SCANCODE_TO_ASCII: [u8; 128] = {
     let mut t = [0u8; 128];
+    t[0x01] = 0x1B; // Esc
     t[0x02] = b'1'; t[0x03] = b'2'; t[0x04] = b'3'; t[0x05] = b'4';
     t[0x06] = b'5'; t[0x07] = b'6'; t[0x08] = b'7'; t[0x09] = b'8';
     t[0x0A] = b'9'; t[0x0B] = b'0'; t[0x0C] = b'-'; t[0x0D] = b'=';

@@ -1,0 +1,11 @@
+[package]
+name = "pst-blk"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS block device — virtio-blk driver for persistence"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]

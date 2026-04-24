@@ -17,6 +17,7 @@ const INV_X86_PAGE_TABLE_MAP: u64 = 35;
 const INV_X86_PAGE_MAP: u64       = 37;
 const INV_IRQ_ACK: u64                  = 27;
 const INV_IRQ_SET_HANDLER: u64          = 28;
+const INV_X86_PAGE_GET_ADDRESS: u64 = 39;
 const INV_X86_IOPORT_CONTROL_ISSUE: u64 = 42;
 const INV_X86_IRQ_IOAPIC: u64          = 49;
 
@@ -192,6 +193,15 @@ pub unsafe extern "C" fn seL4_X86_IOPortControl_Issue(
     );
 
     (info_out >> 12) as seL4_Error
+}
+
+pub unsafe fn page_get_address(frame: seL4_CPtr) -> u64 {
+    let (_, paddr) = sel4_call(
+        frame,
+        msg_info(INV_X86_PAGE_GET_ADDRESS, 0, 0),
+        0, 0, 0, 0,
+    );
+    paddr
 }
 
 // ---------------------------------------------------------------------------

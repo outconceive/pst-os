@@ -15,5 +15,6 @@ libpst = { path = "../../../libpst" }
 pst-markout = { path = "../../../pst-markout" }
 pst-framebuffer = { path = "../../../pst-framebuffer" }
 pst-terminal = { path = "../../../pst-terminal" }
+pst-blk = { path = "../../../pst-blk" }
 proctable = { path = "../../../proctable" }
 pst-offset = { path = "../../../pst-offset" }

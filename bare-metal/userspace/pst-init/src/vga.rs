@@ -7,6 +7,7 @@ use libprivos::vm::VSpaceMapper;
 pub struct VgaState {
     pub fb_vaddr: u64,
     pub next_slot: u64,
+    pub pci_cap: u64,
 }
 
 pub fn init(bootinfo: *const seL4_BootInfo) -> Option<VgaState> {
@@ -270,7 +271,7 @@ pub fn init(bootinfo: *const seL4_BootInfo) -> Option<VgaState> {
             serial_print("[vga] Desktop on screen!\n");
 
             let final_slot = alloc.next_slot();
-            return Some(VgaState { fb_vaddr, next_slot: final_slot });
+            return Some(VgaState { fb_vaddr, next_slot: final_slot, pci_cap });
     } else {
         serial_print("[vga] Map failed: ");
         serial_print_num(map_err as usize);
