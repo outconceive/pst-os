@@ -2,9 +2,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::format;
 
-use crate::keyboard::Keyboard;
+use crate::keyboard::{self, Keyboard};
 use crate::serial_print;
 use crate::storage::Storage;
+use crate::codeview::CodeView;
 
 struct Window {
     title: String,
@@ -25,10 +26,41 @@ impl Window {
     }
 }
 
+const DEMO_SOURCE: &str = r#"fn main() {
+    let table = ParallelTable::new();
+
+    table.append("cryptod", "new", "system");
+    table.append("vfs",     "new", "system");
+    table.append("netd",    "new", "system");
+
+    let order = solve_constraints(&table);
+
+    for name in &order {
+        println!("Boot: {}", name);
+    }
+
+    println!("PST OS ready.");
+}"#;
+
+const DEMO_OUTPUT: &[&str] = &[
+    "Creating parallel table...",
+    "",
+    "Appending: cryptod (system)",
+    "Appending: vfs (system)",
+    "Appending: netd (system)",
+    "",
+    "Solving constraints...",
+    "",
+    "Boot: cryptod",
+    "Boot: vfs",
+    "Boot: netd",
+    "",
+    "PST OS ready.",
+];
+
 pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
     let mut windows = Vec::new();
 
-    // Try to restore from disk
     let restored = store.as_mut().and_then(|s| s.load_desktop());
     if let Some(saved) = restored {
         for (title, lines) in saved {
@@ -43,10 +75,11 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
         windows.push(Window::new("Terminal"));
         windows.push(Window::new("Scratch"));
         windows[0].doc.push(String::from("| Welcome to PST OS"));
-        windows[0].doc.push(String::from("| Tab=switch  Esc=save  Enter=render"));
+        windows[0].doc.push(String::from("| Tab=switch  Esc=save  c=codeview"));
     }
 
     let mut focused: usize = 0;
+    let mut codeview: Option<CodeView> = None;
 
     render_desktop(&windows, focused);
     print_prompt(&windows[focused]);
@@ -54,7 +87,35 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
     loop {
         let ch = kb.read_key();
 
-        // Tab: switch window
+        // Code viewer mode
+        if let Some(ref mut cv) = codeview {
+            match ch {
+                b'q' => {
+                    codeview = None;
+                    render_desktop(&windows, focused);
+                    print_prompt(&windows[focused]);
+                }
+                keyboard::KEY_DOWN | b'j' => {
+                    cv.step_forward();
+                    serial_print(&cv.render());
+                }
+                keyboard::KEY_UP | b'k' => {
+                    cv.step_back();
+                    serial_print(&cv.render());
+                }
+                _ => {}
+            }
+            continue;
+        }
+
+        // Open code viewer
+        if ch == b'c' {
+            let mut cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
+            serial_print(&cv.render());
+            codeview = Some(cv);
+            continue;
+        }
+
         if ch == b'\t' {
             focused = (focused + 1) % windows.len();
             render_desktop(&windows, focused);
@@ -62,7 +123,6 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
             continue;
         }
 
-        // Esc (0x1B): save desktop
         if ch == 0x1B {
             if let Some(ref mut s) = store {
                 let snapshot: Vec<(String, Vec<String>)> = windows.iter()
@@ -99,7 +159,7 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
                 win.line.pop();
                 serial_print("\x08 \x08");
             }
-        } else {
+        } else if ch < 0x80 {
             win.line.push(ch as char);
             unsafe { crate::debug_putchar(ch) };
         }
@@ -109,7 +169,6 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
 fn render_desktop(windows: &[Window], focused: usize) {
     let mut doc = String::new();
 
-    // Status bar
     doc.push_str("@card\n");
     doc.push_str("| ");
     for (i, w) in windows.iter().enumerate() {
@@ -123,7 +182,6 @@ fn render_desktop(windows: &[Window], focused: usize) {
     doc.push('\n');
     doc.push_str("@end card\n");
 
-    // Windows
     for (i, w) in windows.iter().enumerate() {
         let border = if i == focused { "=" } else { "-" };
         doc.push_str("@card\n");

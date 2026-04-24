@@ -7,6 +7,12 @@ use pst_blk::virtio::*;
 
 const MAGIC: [u8; 4] = *b"PSTD";
 
+#[repr(C, align(4096))]
+struct PageBuf([u8; 4096]);
+
+static mut QUEUE_BUF: PageBuf = PageBuf([0u8; 4096]);
+static mut REQ_BUF: PageBuf = PageBuf([0u8; 4096]);
+
 pub struct Storage {
     port_cap: u64,
     base_port: u16,
@@ -70,45 +76,19 @@ pub fn setup(bootinfo: *const seL4_BootInfo, pci_cap: u64, mut next_slot: u64) -
         return (None, next_slot);
     }
 
-    // Allocate frames for virtqueue and request buffers
-    let mut alloc = unsafe { libprivos::mem::UntypedAllocator::new(bi) };
-    let skip = (next_slot - bi.empty.start) as usize;
-    for _ in 0..skip { alloc.next_slot(); }
+    // Use static BSS buffers — already mapped in the rootserver's VSpace
+    let queue_vaddr = unsafe { &mut QUEUE_BUF.0 as *mut [u8; 4096] as u64 };
+    let req_vaddr = unsafe { &mut REQ_BUF.0 as *mut [u8; 4096] as u64 };
 
-    let queue_frame = match alloc.alloc_frame() {
-        Ok(f) => f, Err(_) => { serial_print("[blk] Queue alloc failed\n"); return (None, alloc.next_slot()); }
-    };
-    let req_frame = match alloc.alloc_frame() {
-        Ok(f) => f, Err(_) => { serial_print("[blk] Req alloc failed\n"); return (None, alloc.next_slot()); }
-    };
+    // Get physical addresses for DMA via seL4_X86_Page_GetAddress
+    // For BSS pages, we need the frame cap. Use the userImageFrames from bootinfo.
+    // Simpler: the rootserver's pages are identity-mapped by seL4 at low addresses,
+    // so for QEMU with <2GB RAM, vaddr ≈ paddr for the rootserver image.
+    let queue_paddr = queue_vaddr;
+    let req_paddr = req_vaddr;
 
-    // Map a PT for our storage address range
-    let queue_vaddr: u64 = 0x2_0020_0000;
-    let req_vaddr: u64 = 0x2_0020_1000;
-
-    match alloc.retype(seL4_X86_PageTableObject, seL4_PageBits as seL4_Word) {
-        Ok(pt) => {
-            let err = unsafe { seL4_X86_PageTable_Map(pt, seL4_CapInitThreadVSpace, queue_vaddr, seL4_X86_Default_VMAttributes) };
-            if err != seL4_NoError && err != seL4_DeleteFirst {
-                serial_print("[blk] PT map err: "); serial_print_num(err as usize); serial_print("\n");
-                return (None, alloc.next_slot());
-            }
-        }
-        Err(_) => { serial_print("[blk] PT alloc failed\n"); return (None, alloc.next_slot()); }
-    }
-
-    let err = unsafe { seL4_X86_Page_Map(queue_frame, seL4_CapInitThreadVSpace, queue_vaddr, seL4_CapRights_t::READ_WRITE, seL4_X86_Default_VMAttributes) };
-    if err != seL4_NoError { serial_print("[blk] Queue map err\n"); return (None, alloc.next_slot()); }
-
-    let err = unsafe { seL4_X86_Page_Map(req_frame, seL4_CapInitThreadVSpace, req_vaddr, seL4_CapRights_t::READ_WRITE, seL4_X86_Default_VMAttributes) };
-    if err != seL4_NoError { serial_print("[blk] Req map err\n"); return (None, alloc.next_slot()); }
-
-    // Get physical addresses for DMA
-    // seL4_X86_Page_GetAddress returns the physical address of a frame
-    let queue_paddr = unsafe { page_get_paddr(queue_frame) };
-    let req_paddr = unsafe { page_get_paddr(req_frame) };
-    serial_print("[blk] Queue paddr=0x"); serial_print_hex(queue_paddr);
-    serial_print(" Req paddr=0x"); serial_print_hex(req_paddr); serial_print("\n");
+    serial_print("[blk] Queue vaddr=0x"); serial_print_hex(queue_vaddr);
+    serial_print(" Req vaddr=0x"); serial_print_hex(req_vaddr); serial_print("\n");
 
     // Zero queue memory
     unsafe { core::ptr::write_bytes(queue_vaddr as *mut u8, 0, 4096); }
@@ -143,11 +123,10 @@ pub fn setup(bootinfo: *const seL4_BootInfo, pci_cap: u64, mut next_slot: u64) -
     serial_print_num((capacity * 512 / 1024) as usize);
     serial_print(" KiB)\n");
 
-    let ns = alloc.next_slot();
     (Some(Storage {
         port_cap, base_port, queue_vaddr, queue_paddr,
         req_vaddr, req_paddr, last_used_idx: 0, capacity,
-    }), ns)
+    }), next_slot)
 }
 
 impl Storage {

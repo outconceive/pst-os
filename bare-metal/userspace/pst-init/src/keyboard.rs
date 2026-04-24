@@ -99,15 +99,33 @@ pub fn setup(bootinfo: *const seL4_BootInfo, mut next_slot: u64) -> Option<Keybo
     Some(Keyboard { notif_cap, handler_cap: handler_slot, port_cap: kb_port_cap })
 }
 
+pub const KEY_UP: u8 = 0x80;
+pub const KEY_DOWN: u8 = 0x81;
+pub const KEY_LEFT: u8 = 0x82;
+pub const KEY_RIGHT: u8 = 0x83;
+
 impl Keyboard {
     pub fn read_key(&self) -> u8 {
+        let mut extended = false;
         loop {
             unsafe { native::sel4_wait_notification(self.notif_cap) };
 
             let scancode = unsafe { native::sel4_ioport_in8(self.port_cap, PS2_DATA_PORT) };
             unsafe { seL4_IRQHandler_Ack(self.handler_cap) };
 
-            if scancode & 0x80 != 0 || scancode == 0xE0 { continue; }
+            if scancode == 0xE0 { extended = true; continue; }
+            if scancode & 0x80 != 0 { extended = false; continue; }
+
+            if extended {
+                extended = false;
+                match scancode {
+                    0x48 => return KEY_UP,
+                    0x50 => return KEY_DOWN,
+                    0x4B => return KEY_LEFT,
+                    0x4D => return KEY_RIGHT,
+                    _ => continue,
+                }
+            }
 
             let ascii = SCANCODE_TO_ASCII[scancode as usize & 0x7F];
             if ascii != 0 { return ascii; }
