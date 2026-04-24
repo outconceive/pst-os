@@ -1,0 +1,12 @@
+[package]
+name = "pst-offset"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS offset table — the immortal root. Privilege enforcement beneath all subsystems."
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }
