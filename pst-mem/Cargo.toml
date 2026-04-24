@@ -1,0 +1,12 @@
+[package]
+name = "pst-mem"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS memory allocator — append-only region log, tombstone freeing, coalescing compaction"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }
