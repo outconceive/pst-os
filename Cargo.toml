@@ -12,6 +12,7 @@ members = [
     "pst-offset",
     "pst-markout",
     "pst-time",
+    "pst-framebuffer",
     "pst-integration",
 ]
 

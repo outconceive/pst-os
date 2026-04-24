@@ -1,0 +1,376 @@
+#![no_std]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+pub mod font;
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use alloc::collections::BTreeMap;
+
+use pst_markout::parse::{self, Line, LineType};
+use pst_markout::vnode::VNode;
+use pst_markout::render;
+
+use font::{GLYPH_WIDTH, GLYPH_HEIGHT};
+
+#[derive(Debug, Clone, Copy)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl Color {
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self { Self { r, g, b } }
+    pub const WHITE: Color = Color::rgb(255, 255, 255);
+    pub const BLACK: Color = Color::rgb(0, 0, 0);
+    pub const BLUE: Color = Color::rgb(59, 130, 246);
+    pub const GRAY: Color = Color::rgb(100, 100, 100);
+    pub const LIGHT_GRAY: Color = Color::rgb(220, 220, 220);
+    pub const DARK_BG: Color = Color::rgb(30, 30, 30);
+}
+
+pub struct Framebuffer {
+    pub pixels: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+    pub stride: usize,
+}
+
+impl Framebuffer {
+    pub fn new(width: usize, height: usize) -> Self {
+        let stride = width * 4; // 32bpp BGRA
+        Self {
+            pixels: alloc::vec![0u8; stride * height],
+            width,
+            height,
+            stride,
+        }
+    }
+
+    pub fn clear(&mut self, color: Color) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                self.set_pixel(x, y, color);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: Color) {
+        if x >= self.width || y >= self.height { return; }
+        let offset = y * self.stride + x * 4;
+        self.pixels[offset] = color.b;
+        self.pixels[offset + 1] = color.g;
+        self.pixels[offset + 2] = color.r;
+        self.pixels[offset + 3] = 0xFF;
+    }
+
+    pub fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: Color) {
+        for dy in 0..h {
+            for dx in 0..w {
+                self.set_pixel(x + dx, y + dy, color);
+            }
+        }
+    }
+
+    pub fn draw_char(&mut self, x: usize, y: usize, c: u8, fg: Color, bg: Color) {
+        let glyph = font::glyph(c);
+        for row in 0..GLYPH_HEIGHT {
+            let bits = glyph[row];
+            for col in 0..GLYPH_WIDTH {
+                let color = if bits & (0x80 >> col) != 0 { fg } else { bg };
+                self.set_pixel(x + col, y + row, color);
+            }
+        }
+    }
+
+    pub fn draw_text(&mut self, x: usize, y: usize, text: &str, fg: Color, bg: Color) {
+        let mut cx = x;
+        for c in text.bytes() {
+            if cx + GLYPH_WIDTH > self.width { break; }
+            self.draw_char(cx, y, c, fg, bg);
+            cx += GLYPH_WIDTH;
+        }
+    }
+
+    pub fn draw_text_transparent(&mut self, x: usize, y: usize, text: &str, fg: Color) {
+        let mut cx = x;
+        for c in text.bytes() {
+            if cx + GLYPH_WIDTH > self.width { break; }
+            let glyph = font::glyph(c);
+            for row in 0..GLYPH_HEIGHT {
+                let bits = glyph[row];
+                for col in 0..GLYPH_WIDTH {
+                    if bits & (0x80 >> col) != 0 {
+                        self.set_pixel(cx + col, y + row, fg);
+                    }
+                }
+            }
+            cx += GLYPH_WIDTH;
+        }
+    }
+
+    pub fn draw_hline(&mut self, x: usize, y: usize, w: usize, color: Color) {
+        for dx in 0..w {
+            self.set_pixel(x + dx, y, color);
+        }
+    }
+}
+
+/// Render a Markout document to a framebuffer.
+/// This is the compositor. Same code path as HTML rendering,
+/// but outputs pixels instead of strings.
+pub fn render_markout(fb: &mut Framebuffer, markout: &str, bg: Color, fg: Color) {
+    let lines = parse::parse(markout);
+    let vdom = render::render(&lines);
+    render_vnode(fb, &vdom, 16, 16, bg, fg);
+}
+
+fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Color, fg: Color) -> usize {
+    match node {
+        VNode::Text(t) => {
+            if !t.content.trim().is_empty() {
+                fb.draw_text_transparent(x, y, &t.content, fg);
+            }
+            y + GLYPH_HEIGHT
+        }
+        VNode::Element(el) => {
+            let mut cy = y;
+
+            // Check for parametric positioning
+            if let Some(style) = el.attrs.get("style") {
+                if style.contains("position:absolute") {
+                    let (px, py, pw, _ph) = parse_position(style);
+
+                    // Render children at absolute position
+                    for child in &el.children {
+                        render_vnode(fb, child, x + px, y + py, bg, fg);
+                    }
+                    return cy;
+                }
+                if style.contains("position:relative") {
+                    // Parametric container — children have absolute positions
+                    for child in &el.children {
+                        cy = render_vnode(fb, child, x, y, bg, fg);
+                    }
+                    return cy;
+                }
+            }
+
+            let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
+
+            // Card — draw background + border
+            if class.contains("mc-card") {
+                let card_x = x;
+                let card_y = cy;
+
+                // Render children to measure height
+                let mut inner_y = card_y + 12;
+                for child in &el.children {
+                    inner_y = render_vnode(fb, child, card_x + 16, inner_y, bg, fg);
+                    inner_y += 4;
+                }
+
+                // Draw card border
+                let card_h = inner_y - card_y + 12;
+                let card_w = fb.width - card_x * 2;
+                fb.draw_hline(card_x, card_y, card_w, Color::GRAY);
+                fb.draw_hline(card_x, card_y + card_h, card_w, Color::GRAY);
+                for dy in 0..card_h {
+                    fb.set_pixel(card_x, card_y + dy, Color::GRAY);
+                    fb.set_pixel(card_x + card_w - 1, card_y + dy, Color::GRAY);
+                }
+
+                return card_y + card_h + 8;
+            }
+
+            // Row
+            if class.contains("mc-row") {
+                for child in &el.children {
+                    cy = render_vnode(fb, child, x, cy, bg, fg);
+                }
+                return cy + 2;
+            }
+
+            // Input
+            if class.contains("mc-input") {
+                let w = 160;
+                let h = GLYPH_HEIGHT + 8;
+                fb.fill_rect(x, cy, w, h, Color::WHITE);
+                fb.draw_hline(x, cy, w, Color::LIGHT_GRAY);
+                fb.draw_hline(x, cy + h - 1, w, Color::LIGHT_GRAY);
+                return cy + h + 4;
+            }
+
+            // Button
+            if class.contains("mc-button") {
+                let label = text_content(node);
+                let w = label.len() * GLYPH_WIDTH + 16;
+                let h = GLYPH_HEIGHT + 8;
+                fb.fill_rect(x, cy, w, h, Color::BLUE);
+                fb.draw_text(x + 8, cy + 4, &label, Color::WHITE, Color::BLUE);
+                return cy + h + 4;
+            }
+
+            // Divider
+            if class.contains("mc-divider") {
+                fb.draw_hline(x, cy + 4, fb.width - x * 2, Color::GRAY);
+                return cy + 12;
+            }
+
+            // Label / default
+            if class.contains("mc-label") {
+                let content = text_content(node);
+                fb.draw_text_transparent(x, cy, &content, fg);
+                return cy + GLYPH_HEIGHT;
+            }
+
+            // Generic container
+            for child in &el.children {
+                cy = render_vnode(fb, child, x, cy, bg, fg);
+                cy += 2;
+            }
+            cy
+        }
+    }
+}
+
+fn text_content(node: &VNode) -> String {
+    match node {
+        VNode::Text(t) => t.content.clone(),
+        VNode::Element(el) => {
+            let mut s = String::new();
+            for child in &el.children {
+                s.push_str(&text_content(child));
+            }
+            s
+        }
+    }
+}
+
+fn parse_position(style: &str) -> (usize, usize, usize, usize) {
+    let mut x = 0usize;
+    let mut y = 0usize;
+    let mut w = 0usize;
+    let mut h = 0usize;
+
+    for part in style.split(';') {
+        let part = part.trim();
+        if let Some(val) = part.strip_prefix("left:") {
+            x = parse_px(val);
+        } else if let Some(val) = part.strip_prefix("top:") {
+            y = parse_px(val);
+        } else if let Some(val) = part.strip_prefix("width:") {
+            w = parse_px(val);
+        } else if let Some(val) = part.strip_prefix("height:") {
+            h = parse_px(val);
+        }
+    }
+    (x, y, w, h)
+}
+
+fn parse_px(s: &str) -> usize {
+    let s = s.trim().trim_end_matches("px");
+    // Handle float values like "120.0"
+    if let Some(dot) = s.find('.') {
+        s[..dot].parse().unwrap_or(0)
+    } else {
+        s.parse().unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_framebuffer_create() {
+        let fb = Framebuffer::new(640, 480);
+        assert_eq!(fb.pixels.len(), 640 * 480 * 4);
+    }
+
+    #[test]
+    fn test_draw_char() {
+        let mut fb = Framebuffer::new(64, 32);
+        fb.clear(Color::BLACK);
+        fb.draw_char(0, 0, b'A', Color::WHITE, Color::BLACK);
+        let mut has_white = false;
+        for row in 0..GLYPH_HEIGHT {
+            for col in 0..GLYPH_WIDTH {
+                let off = row * fb.stride + col * 4;
+                if fb.pixels[off + 2] == 255 { has_white = true; break; }
+            }
+            if has_white { break; }
+        }
+        assert!(has_white);
+    }
+
+    #[test]
+    fn test_draw_text() {
+        let mut fb = Framebuffer::new(640, 480);
+        fb.clear(Color::DARK_BG);
+        fb.draw_text(10, 10, "PST OS", Color::WHITE, Color::DARK_BG);
+        // Check the text area for white pixels
+        let mut has_text = false;
+        for row in 10..10 + GLYPH_HEIGHT {
+            for col in 10..10 + 6 * GLYPH_WIDTH {
+                let off = row * fb.stride + col * 4;
+                if fb.pixels[off + 2] == 255 { has_text = true; break; }
+            }
+            if has_text { break; }
+        }
+        assert!(has_text);
+    }
+
+    #[test]
+    fn test_render_markout_to_framebuffer() {
+        let mut fb = Framebuffer::new(800, 600);
+        fb.clear(Color::DARK_BG);
+
+        render_markout(&mut fb, "\
+@card
+| Parallel String Theory OS
+@parametric
+| {label:title \"PST OS v0.1\"}
+| {label:status \"Running\" center-x:title gap-y:16}
+@end parametric
+| The thesis is proven.
+@end card",
+            Color::DARK_BG, Color::WHITE);
+
+        // Check that pixels were written (not all dark background)
+        let non_bg = fb.pixels.chunks(4)
+            .filter(|p| p[0] != 30 || p[1] != 30 || p[2] != 30)
+            .count();
+        assert!(non_bg > 100, "expected rendered pixels, got {}", non_bg);
+    }
+
+    #[test]
+    fn test_parametric_positions_applied() {
+        let mut fb = Framebuffer::new(800, 600);
+        fb.clear(Color::BLACK);
+
+        render_markout(&mut fb, "\
+@parametric
+| {label:a \"Top\"}
+| {label:b \"Bottom\" left:a gap-y:32}
+@end parametric",
+            Color::BLACK, Color::WHITE);
+
+        // "Top" renders at base y (16 padding + 0 from solver = 16)
+        // "Bottom" renders at y=16 + 24 (glyph height) + 32 (gap) = 72
+        // Scan a wide band for white pixels below the "Top" label area
+        let mut has_bottom = false;
+        for row in 50..100 {
+            for col in 0..fb.width {
+                let off = row * fb.stride + col * 4;
+                if fb.pixels[off + 2] == 255 { has_bottom = true; break; }
+            }
+            if has_bottom { break; }
+        }
+        assert!(has_bottom, "expected 'Bottom' text rendered below 'Top' via gap-y:32");
+    }
+}

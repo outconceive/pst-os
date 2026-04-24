@@ -1,0 +1,13 @@
+[package]
+name = "pst-framebuffer"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS framebuffer — Markout rendered to pixels. No Wayland. No X11. No display server."
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }
+pst-markout = { path = "../pst-markout" }
