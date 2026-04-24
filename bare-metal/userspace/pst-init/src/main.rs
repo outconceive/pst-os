@@ -8,6 +8,7 @@ mod sel4_shims;
 mod vga;
 mod keyboard;
 mod shell;
+mod desktop;
 
 // Custom entry point: save bootinfo (rdi from kernel) before sel4runtime runs
 #[no_mangle]
@@ -261,7 +262,7 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
                 serial_print("========================================\n\n");
 
                 if let Some(kb) = keyboard::setup(bi_ptr, vga_state.next_slot) {
-                    shell::run(&kb);
+                    desktop::run(&kb);
                 }
             }
         } else {
