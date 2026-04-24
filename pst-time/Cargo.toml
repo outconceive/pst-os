@@ -1,0 +1,12 @@
+[package]
+name = "pst-time"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS temporal dimension — time as a parallel string with tiered compaction"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }

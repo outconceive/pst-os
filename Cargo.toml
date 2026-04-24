@@ -11,6 +11,7 @@ members = [
     "pst-mem",
     "pst-offset",
     "pst-markout",
+    "pst-time",
     "pst-integration",
 ]
 
