@@ -1,0 +1,12 @@
+[package]
+name = "proctable"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS process table — parallel strings + constraint-solved spawn order"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }

@@ -1,0 +1,13 @@
+[package]
+name = "libpst"
+version = "0.1.0"
+edition = "2021"
+description = "Parallel String Theory core — flat tables, constraint solver, offset index"
+
+[features]
+default = ["alloc"]
+alloc = []
+# Enable std for testing only
+std = []
+
+[dependencies]

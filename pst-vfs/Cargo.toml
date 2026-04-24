@@ -1,0 +1,12 @@
+[package]
+name = "pst-vfs"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS filesystem — flat parallel string table, prefix-based directories, tombstone deletion"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+libpst = { path = "../libpst" }

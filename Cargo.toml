@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "libpst",
+    "proctable",
+    "pst-vfs",
+]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
