@@ -6,6 +6,7 @@ use crate::keyboard::{self, Keyboard};
 use crate::serial_print;
 use crate::storage::Storage;
 use crate::codeview::CodeView;
+use crate::editor::{Editor, EditorAction};
 
 struct Window {
     title: String,
@@ -75,17 +76,44 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
         windows.push(Window::new("Terminal"));
         windows.push(Window::new("Scratch"));
         windows[0].doc.push(String::from("| Welcome to PST OS"));
-        windows[0].doc.push(String::from("| Tab=switch  Esc=save  c=codeview"));
+        windows[0].doc.push(String::from("| Tab=switch  Esc=save  c=code  e=edit  m=markout"));
     }
 
     let mut focused: usize = 0;
     let mut codeview: Option<CodeView> = None;
+    let mut editor: Option<Editor> = None;
 
     render_desktop(&windows, focused);
     print_prompt(&windows[focused]);
 
     loop {
         let ch = kb.read_key();
+
+        // Editor mode
+        if let Some(ref mut ed) = editor {
+            match ed.handle_key(ch) {
+                EditorAction::Continue => {
+                    serial_print(&ed.render());
+                }
+                EditorAction::Save => {
+                    if let Some(ref mut s) = store {
+                        save_file(s, &ed.filename, &ed.to_text());
+                    }
+                    serial_print("[editor] Saved ");
+                    serial_print(&ed.filename);
+                    serial_print("\n");
+                    editor = None;
+                    render_desktop(&windows, focused);
+                    print_prompt(&windows[focused]);
+                }
+                EditorAction::Quit => {
+                    editor = None;
+                    render_desktop(&windows, focused);
+                    print_prompt(&windows[focused]);
+                }
+            }
+            continue;
+        }
 
         // Code viewer mode
         if let Some(ref mut cv) = codeview {
@@ -108,9 +136,23 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
             continue;
         }
 
+        // Open editor (e=text, m=markout)
+        if ch == b'e' {
+            let mut ed = Editor::new("untitled.txt");
+            serial_print(&ed.render());
+            editor = Some(ed);
+            continue;
+        }
+        if ch == b'm' {
+            let mut ed = Editor::new("untitled.md");
+            serial_print(&ed.render());
+            editor = Some(ed);
+            continue;
+        }
+
         // Open code viewer
         if ch == b'c' {
-            let mut cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
+            let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
             serial_print(&cv.render());
             codeview = Some(cv);
             continue;
@@ -204,5 +246,34 @@ fn print_prompt(win: &Window) {
         serial_print(&format!("{}> ", win.title));
     } else {
         serial_print("  ..> ");
+    }
+}
+
+fn save_file(store: &mut Storage, filename: &str, content: &str) {
+    use pst_blk::block::BLOCK_SIZE;
+    let bytes = content.as_bytes();
+    // File header at block 16+ (blocks 0-15 reserved for desktop)
+    let mut block = [0u8; BLOCK_SIZE];
+    block[0..4].copy_from_slice(b"PSTF");
+    let name_bytes = filename.as_bytes();
+    let nlen = name_bytes.len().min(59);
+    block[4] = nlen as u8;
+    block[5..5 + nlen].copy_from_slice(&name_bytes[..nlen]);
+    let total = bytes.len();
+    block[64] = (total & 0xFF) as u8;
+    block[65] = ((total >> 8) & 0xFF) as u8;
+    block[66] = ((total >> 16) & 0xFF) as u8;
+    store.write_block(16, &block);
+
+    // Content in subsequent blocks
+    let mut lba = 17u64;
+    let mut offset = 0usize;
+    while offset < total {
+        block = [0u8; BLOCK_SIZE];
+        let chunk = (total - offset).min(BLOCK_SIZE);
+        block[..chunk].copy_from_slice(&bytes[offset..offset + chunk]);
+        store.write_block(lba, &block);
+        offset += chunk;
+        lba += 1;
     }
 }

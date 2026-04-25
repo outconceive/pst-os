@@ -11,6 +11,7 @@ mod shell;
 mod desktop;
 mod storage;
 mod codeview;
+mod editor;
 
 // Custom entry point: save bootinfo (rdi from kernel) before sel4runtime runs
 #[no_mangle]
