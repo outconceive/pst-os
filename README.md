@@ -59,6 +59,99 @@ A kernel panic is just a cycle in the constraint graph. The topological sort fai
 | **pst-blk** | Block device interface — virtio-blk driver for persistence |
 | **pst-integration** | 9 cross-crate tests proving subsystems work together |
 
+## Markout reference
+
+Markout is the declarative UI language. No JSX, no transpiler, no build step.
+
+### Components
+
+```
+| Hello World                          Plain text (label)
+| {input:name}                         Text input bound to "name"
+| {password:pass}                      Password field
+| {button:submit "Sign In" primary}    Styled button
+| {checkbox:agree}                     Checkbox
+| {radio:choice}                       Radio button
+| {select:country}                     Dropdown select
+| {textarea:notes}                     Multi-line text area
+| {image:photo "photo.png"}            Image
+| {link:docs "Documentation" ghost}    Hyperlink
+| {divider:sep}                        Horizontal rule
+| {spacer:gap}                         Whitespace
+| {progress:loading}                   Progress indicator
+```
+
+### Containers
+
+```
+@card padding:16                       Card with border
+| ...content...
+@end card
+
+@nav                                   Navigation bar
+@header                                Page header
+@footer                                Page footer
+@section                               Section
+@form                                  Form group
+@heading                               Heading block
+@list                                  Unordered list
+@ordered-list                          Numbered list
+@quote                                 Blockquote
+@code-block                            Code block
+```
+
+### Parametric layout
+
+```
+@parametric
+| {label:title "Dashboard"}
+| {input:search center-x:title gap-y:1rem}
+| {button:go "Search" after:search gap-x:8px center-y:search}
+@end parametric
+```
+
+Constraint vocabulary: `center-x`, `center-y`, `left`, `right`, `top`, `bottom`, `gap-x`, `gap-y`, `width`, `height`, `after`. The solver computes absolute positions from relationships. No coordinates.
+
+### Styles
+
+Append a style name to any component: `primary`, `secondary`, `danger`, `warning`, `info`, `ghost`, `outline`, `dark`, `light`.
+
+### Rich text editor
+
+```
+@editor bold italic heading code bind:notes
+| ...editable content...
+@end editor
+```
+
+### Data binding
+
+State updates re-render only affected components. `{input:name}` binds to the `name` key. `{button:submit}` triggers on click. State flows through the constraint solver.
+
+### Lists
+
+```
+@each:items
+| {label:items.name}  {button:remove "×" danger}
+@end each
+```
+
+Dynamic lists bound to state. Add/remove items, the solver re-renders.
+
+### Rendering targets
+
+The same Markout document renders on every target:
+
+| Target | Renderer | Output |
+|--------|----------|--------|
+| Browser | Outconceive WASM | DOM elements |
+| Terminal | pst-terminal | ANSI escape sequences |
+| Desktop | pst-framebuffer | VGA pixels |
+| Serial | pst-terminal | serial console |
+| SSR | html::to_html | static HTML string |
+
+One parser, one solver, one VNode tree, N renderers.
+
 ## Example: boot sequence
 
 Instead of hardcoding spawn order:
