@@ -175,6 +175,9 @@ fn render_line(line: &Line) -> VNode {
             if let Some(&(span, total)) = line.cols.get(&start) {
                 attrs.insert(String::from("data-col"), format!("{},{}", span, total));
             }
+            if let Some(a) = line.animates.get(&start) {
+                attrs.insert(String::from("data-animate"), a.clone());
+            }
             if let Some(v) = line.validates.get(&start) {
                 attrs.insert(String::from("data-validate"), v.clone());
             }

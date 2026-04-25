@@ -35,6 +35,7 @@ pub struct Line {
     pub cols: BTreeMap<usize, (u8, u8)>,
     pub responsive: BTreeMap<usize, Vec<(String, u8, u8)>>,
     pub validates: BTreeMap<usize, String>,
+    pub animates: BTreeMap<usize, String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +61,7 @@ impl Line {
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
+            animates: BTreeMap::new(),
         }
     }
 
@@ -74,6 +76,7 @@ impl Line {
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
+            animates: BTreeMap::new(),
         }
     }
 
@@ -88,6 +91,7 @@ impl Line {
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
+            animates: BTreeMap::new(),
         }
     }
 
@@ -101,6 +105,7 @@ impl Line {
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
+            animates: BTreeMap::new(),
         }
     }
 
@@ -118,6 +123,7 @@ impl Line {
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
+            animates: BTreeMap::new(),
         }
     }
 }
@@ -185,6 +191,7 @@ fn parse_content_line(input: &str) -> Line {
     let mut cols: BTreeMap<usize, (u8, u8)> = BTreeMap::new();
     let mut responsive_map: BTreeMap<usize, Vec<(String, u8, u8)>> = BTreeMap::new();
     let mut validates_map: BTreeMap<usize, String> = BTreeMap::new();
+    let mut animates_map: BTreeMap<usize, String> = BTreeMap::new();
 
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
@@ -238,6 +245,9 @@ fn parse_content_line(input: &str) -> Line {
                 if let Some(v) = comp.validate {
                     validates_map.insert(pos, v);
                 }
+                if let Some(a) = comp.animate {
+                    animates_map.insert(pos, a);
+                }
 
                 i = end;
                 continue;
@@ -257,6 +267,7 @@ fn parse_content_line(input: &str) -> Line {
     line.cols = cols;
     line.responsive = responsive_map;
     line.validates = validates_map;
+    line.animates = animates_map;
     line
 }
 
@@ -270,6 +281,7 @@ struct ParsedComponent {
     col: Option<(u8, u8)>,
     responsive: Vec<(String, u8, u8)>,
     validate: Option<String>,
+    animate: Option<String>,
 }
 
 fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usize)> {
@@ -321,10 +333,13 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
     let mut col = None;
     let mut responsive = Vec::new();
     let mut validate = None;
+    let mut animate = None;
 
     for part in &parts[1..] {
         if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
             label = part[1..part.len() - 1].to_string();
+        } else if part.starts_with("animate:") {
+            animate = Some(String::from(&part[8..]));
         } else if part.starts_with("validate:") {
             validate = Some(String::from(&part[9..]));
         } else if part.starts_with("col-") {
@@ -367,6 +382,7 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
         col,
         responsive,
         validate,
+        animate,
     }, end))
 }
 
@@ -564,6 +580,23 @@ mod tests {
         assert!(html.contains("data-responsive"));
         assert!(html.contains("sm:12,12"));
         assert!(html.contains("lg:6,12"));
+    }
+
+    #[test]
+    fn test_animate_parse() {
+        let lines = parse("| {label:title \"Hello\" animate:fade}");
+        let anims: Vec<&String> = lines[0].animates.values().collect();
+        assert_eq!(anims.len(), 1);
+        assert_eq!(anims[0], "fade");
+    }
+
+    #[test]
+    fn test_animate_flows_to_vnode() {
+        use crate::render;
+        let lines = parse("| {button:go \"Go\" animate:slide}");
+        let vdom = render::render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("data-animate=\"slide\""));
     }
 
     #[test]
