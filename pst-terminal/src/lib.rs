@@ -254,24 +254,28 @@ fn render_card(out: &mut String, el: &VElement, ctx: &mut RenderCtx) {
 fn render_button(out: &mut String, el: &VElement, ctx: &mut RenderCtx) {
     let label = text_content(&VNode::Element(el.clone()));
     let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
-    let style = ansi::theme_style(class);
-    if !style.is_empty() {
-        out.push_str(style);
-        out.push_str(ansi::BOLD);
-        out.push_str(" ");
-        out.push_str(label.trim());
-        out.push_str(" ");
-        out.push_str(ansi::RESET);
-    } else {
-        out.push_str(&ansi::bg(59, 130, 246));
-        out.push_str(&ansi::fg(255, 255, 255));
-        out.push_str(ansi::BOLD);
-        out.push_str(" ");
-        out.push_str(label.trim());
-        out.push_str(" ");
-        out.push_str(ansi::RESET);
-    }
+
+    let (r, g, b) = style_to_rgb(class);
+    out.push_str(&ansi::bg(r, g, b));
+    out.push_str(&ansi::fg(255, 255, 255));
+    out.push_str(ansi::BOLD);
+    out.push_str(" ");
+    out.push_str(label.trim());
+    out.push_str(" ");
+    out.push_str(ansi::RESET);
     ctx.col += label.trim().len() + 2;
+}
+
+fn style_to_rgb(class: &str) -> (u8, u8, u8) {
+    if class.contains("mc-primary") { (59, 130, 246) }
+    else if class.contains("mc-secondary") { (107, 114, 128) }
+    else if class.contains("mc-danger") { (239, 68, 68) }
+    else if class.contains("mc-warning") { (245, 158, 11) }
+    else if class.contains("mc-info") { (6, 182, 212) }
+    else if class.contains("mc-dark") { (30, 30, 30) }
+    else if class.contains("mc-light") { (229, 231, 235) }
+    else if class.contains("mc-ghost") { (55, 65, 81) }
+    else { (59, 130, 246) }
 }
 
 fn render_input(out: &mut String, _el: &VElement, ctx: &mut RenderCtx) {

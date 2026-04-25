@@ -293,7 +293,9 @@ fn is_constraint_token(s: &str) -> bool {
 }
 
 fn is_style(s: &str) -> bool {
-    matches!(s, "primary" | "secondary" | "danger" | "warning" | "info" | "outline" | "ghost")
+    matches!(s, "primary" | "secondary" | "danger" | "warning" | "info"
+        | "dark" | "light" | "outline" | "ghost")
+    || (s.len() == 1 && s.as_bytes()[0] >= b'1' && s.as_bytes()[0] <= b'9')
 }
 
 fn style_char(s: &str) -> char {
@@ -303,8 +305,13 @@ fn style_char(s: &str) -> char {
         "danger" => 'd',
         "warning" => 'w',
         "info" => 'i',
+        "dark" => 'k',
+        "light" => 'l',
         "outline" => 'o',
         "ghost" => 'g',
+        "1" => '1', "2" => '2', "3" => '3',
+        "4" => '4', "5" => '5', "6" => '6',
+        "7" => '7', "8" => '8', "9" => '9',
         _ => ' ',
     }
 }

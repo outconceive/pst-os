@@ -80,6 +80,7 @@ fn render_line(line: &Line) -> VNode {
     let content: Vec<char> = line.content.chars().collect();
     let comps: Vec<char> = line.components.chars().collect();
     let keys: Vec<char> = line.state_keys.chars().collect();
+    let styles: Vec<char> = line.styles.chars().collect();
     let len = content.len();
 
     if len == 0 {
@@ -95,9 +96,16 @@ fn render_line(line: &Line) -> VNode {
             let span_content: String = content[start..i].iter().collect();
             let span_key: String = keys[start..i.min(keys.len())].iter().collect::<String>()
                 .trim_matches('_').to_string();
+            let style_char = *styles.get(start).unwrap_or(&' ');
 
             let mut attrs = BTreeMap::new();
-            attrs.insert(String::from("class"), css_class(comp));
+            let mut class = css_class(comp);
+            let style_class = style_css_class(style_char);
+            if !style_class.is_empty() {
+                class.push(' ');
+                class.push_str(style_class);
+            }
+            attrs.insert(String::from("class"), class);
             if !span_key.is_empty() {
                 attrs.insert(String::from("data-bind"), span_key);
             }
@@ -387,6 +395,30 @@ fn css_class(comp: char) -> String {
         parse::SPARKLINE => "mc-sparkline",
         _ => "mc-label",
     })
+}
+
+fn style_css_class(c: char) -> &'static str {
+    match c {
+        'p' => "mc-primary",
+        's' => "mc-secondary",
+        'd' => "mc-danger",
+        'w' => "mc-warning",
+        'i' => "mc-info",
+        'k' => "mc-dark",
+        'l' => "mc-light",
+        'o' => "mc-outline",
+        'g' => "mc-ghost",
+        '1' => "mc-size-1",
+        '2' => "mc-size-2",
+        '3' => "mc-size-3",
+        '4' => "mc-size-4",
+        '5' => "mc-size-5",
+        '6' => "mc-size-6",
+        '7' => "mc-size-7",
+        '8' => "mc-size-8",
+        '9' => "mc-size-9",
+        _ => "",
+    }
 }
 
 fn semantic_tag(tag: &str) -> &str {

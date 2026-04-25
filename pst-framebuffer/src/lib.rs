@@ -254,15 +254,8 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
                 let label = text_content(node);
                 let w = label.len() * GLYPH_WIDTH + 24;
                 let h = GLYPH_HEIGHT + 12;
-                let btn_color = if class.contains("mc-primary") {
-                    Color::rgb(59, 130, 246)
-                } else if class.contains("mc-danger") {
-                    Color::rgb(239, 68, 68)
-                } else if class.contains("mc-ghost") {
-                    Color::rgb(55, 55, 60)
-                } else {
-                    Color::rgb(59, 130, 246)
-                };
+                let btn_color = style_color(class).unwrap_or(Color::rgb(59, 130, 246));
+                let text_fg = style_fg(class);
                 fb.fill_rect(x, cy, w, h, btn_color);
                 fb.draw_hline(x, cy, w, Color::rgb(
                     btn_color.r.saturating_add(40),
@@ -274,7 +267,7 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
                     btn_color.g.saturating_sub(30),
                     btn_color.b.saturating_sub(30),
                 ));
-                fb.draw_text(x + 12, cy + 6, &label, Color::WHITE, btn_color);
+                fb.draw_text(x + 12, cy + 6, &label, text_fg, btn_color);
                 return cy + h + 6;
             }
 
@@ -354,13 +347,7 @@ fn render_vnode_inline(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, b
                 let label = text_content(node);
                 let w = label.len() * GLYPH_WIDTH + 24;
                 let h = GLYPH_HEIGHT + 12;
-                let btn_color = if class.contains("mc-primary") {
-                    Color::rgb(59, 130, 246)
-                } else if class.contains("mc-danger") {
-                    Color::rgb(239, 68, 68)
-                } else {
-                    Color::rgb(59, 130, 246)
-                };
+                let btn_color = style_color(class).unwrap_or(Color::rgb(59, 130, 246));
                 fb.fill_rect(x, y, w, h, btn_color);
                 fb.draw_hline(x, y, w, Color::rgb(
                     btn_color.r.saturating_add(40), btn_color.g.saturating_add(40), btn_color.b.saturating_add(40)));
@@ -498,6 +485,34 @@ fn render_vnode_inline(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, b
             (cx - x, max_h)
         }
     }
+}
+
+fn style_color(class: &str) -> Option<Color> {
+    if class.contains("mc-primary") { Some(Color::rgb(59, 130, 246)) }
+    else if class.contains("mc-secondary") { Some(Color::rgb(107, 114, 128)) }
+    else if class.contains("mc-danger") { Some(Color::rgb(239, 68, 68)) }
+    else if class.contains("mc-warning") { Some(Color::rgb(245, 158, 11)) }
+    else if class.contains("mc-info") { Some(Color::rgb(6, 182, 212)) }
+    else if class.contains("mc-dark") { Some(Color::rgb(30, 30, 30)) }
+    else if class.contains("mc-light") { Some(Color::rgb(229, 231, 235)) }
+    else if class.contains("mc-outline") { Some(Color::rgb(107, 114, 128)) }
+    else if class.contains("mc-ghost") { Some(Color::rgb(55, 65, 81)) }
+    else { None }
+}
+
+fn style_fg(class: &str) -> Color {
+    if class.contains("mc-dark") { Color::WHITE }
+    else if class.contains("mc-light") { Color::BLACK }
+    else if class.contains("mc-ghost") { Color::rgb(180, 180, 180) }
+    else { Color::WHITE }
+}
+
+fn size_scale(class: &str) -> usize {
+    for i in 1..=9u8 {
+        let needle = alloc::format!("mc-size-{}", i);
+        if class.contains(&needle) { return i as usize; }
+    }
+    5 // default
 }
 
 fn text_content(node: &VNode) -> String {
