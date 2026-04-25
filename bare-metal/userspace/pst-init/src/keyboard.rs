@@ -111,6 +111,8 @@ pub const KEY_F5: u8 = 0xF5;
 pub const KEY_F6: u8 = 0xF6;
 
 impl Keyboard {
+    pub fn port_cap(&self) -> u64 { self.port_cap }
+
     pub fn read_key(&self) -> u8 {
         let mut extended = false;
         loop {

@@ -15,6 +15,8 @@ mod editor;
 mod browser;
 mod convergence;
 mod vgacon;
+mod mouse;
+mod input;
 mod net;
 mod rng;
 
@@ -284,6 +286,10 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
                 serial_print("========================================\n\n");
 
                 if let Some(kb) = keyboard::setup(bi_ptr, next_slot) {
+                    let mouse_dev = mouse::setup(bi_ptr, kb.port_cap(), next_slot + 20, vga_state.fb_vaddr);
+                    if mouse_dev.is_some() {
+                        serial_print("[mouse] Mouse available\n");
+                    }
                     desktop::run(&kb, store, net_dev, vga_state.fb_vaddr);
                 }
             }
