@@ -74,6 +74,34 @@ impl Line {
         }
     }
 
+    pub fn each_start(key: &str) -> Self {
+        Self {
+            content: String::new(), components: String::new(),
+            state_keys: String::new(), styles: String::new(),
+            line_type: LineType::EachStart,
+            tag: Some(String::from(key)),
+            config: None,
+            constraints: BTreeMap::new(),
+            cols: BTreeMap::new(),
+            responsive: BTreeMap::new(),
+        }
+    }
+
+    pub fn each_end() -> Self {
+        Self {
+            content: String::new(), components: String::new(),
+            state_keys: String::new(), styles: String::new(),
+            line_type: LineType::EachEnd,
+            tag: None, config: None,
+            constraints: BTreeMap::new(),
+            cols: BTreeMap::new(),
+            responsive: BTreeMap::new(),
+        }
+    }
+
+    pub fn is_each_start(&self) -> bool { self.line_type == LineType::EachStart }
+    pub fn is_each_end(&self) -> bool { self.line_type == LineType::EachEnd }
+
     pub fn container_end(tag: &str) -> Self {
         Self {
             content: String::new(), components: String::new(),
@@ -95,8 +123,22 @@ pub fn parse(input: &str) -> Vec<Line> {
         let trimmed = raw.trim();
         if trimmed.is_empty() { continue; }
 
+        if trimmed == "@end each" {
+            lines.push(Line::each_end());
+            continue;
+        }
+
         if let Some(rest) = trimmed.strip_prefix("@end ") {
             lines.push(Line::container_end(rest.trim()));
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("@each:") {
+            lines.push(Line::each_start(rest.trim()));
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("@each ") {
+            lines.push(Line::each_start(rest.trim()));
             continue;
         }
 
@@ -506,6 +548,33 @@ mod tests {
         assert!(html.contains("data-responsive"));
         assert!(html.contains("sm:12,12"));
         assert!(html.contains("lg:6,12"));
+    }
+
+    #[test]
+    fn test_each_parse() {
+        let lines = parse("@each:items\n| {label:name}\n@end each");
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].line_type, LineType::EachStart);
+        assert_eq!(lines[0].tag, Some(String::from("items")));
+        assert_eq!(lines[2].line_type, LineType::EachEnd);
+    }
+
+    #[test]
+    fn test_each_render_with_state() {
+        use crate::state::{StateStore, StateValue};
+        use crate::render;
+        let mut state = StateStore::new();
+        state.add_list_item("items", &[
+            (String::from("name"), StateValue::Text(String::from("Apple"))),
+        ]);
+        state.add_list_item("items", &[
+            (String::from("name"), StateValue::Text(String::from("Banana"))),
+        ]);
+        let lines = parse("@each:items\n| {label:name}\n@end each");
+        let vdom = render::render_with_state(&lines, &state);
+        let html = crate::html::to_html(&vdom);
+        // Should have 2 rows rendered from the template
+        assert!(html.contains("mc-row"));
     }
 
     #[test]

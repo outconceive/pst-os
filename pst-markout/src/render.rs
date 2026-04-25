@@ -10,11 +10,54 @@ use crate::vnode::VNode;
 use libpst::constraint::{Constraint, GapValue};
 
 pub fn render(lines: &[Line]) -> VNode {
+    render_with_state(lines, &crate::state::StateStore::new())
+}
+
+pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VNode {
     let mut root_children = Vec::new();
     let mut container_stack: Vec<(String, BTreeMap<String, String>, Vec<VNode>)> = Vec::new();
+    let mut each_stack: Vec<(String, Vec<Line>)> = Vec::new();
     let mut parametric_stack: Vec<(BTreeMap<String, String>, Vec<Line>)> = Vec::new();
 
     for line in lines {
+        // Collecting template lines inside @each
+        if !each_stack.is_empty() {
+            if line.is_each_end() {
+                let (list_key, template_lines) = each_stack.pop().unwrap();
+                let count = state.get_list_count(&list_key);
+                for item_idx in 0..count {
+                    let scope = format!("{}.{}", list_key, item_idx);
+                    for tpl_line in &template_lines {
+                        let mut scoped_line = tpl_line.clone();
+                        // Replace state keys with scoped versions
+                        let mut new_keys = String::new();
+                        for ch in scoped_line.state_keys.chars() {
+                            new_keys.push(ch);
+                        }
+                        let row = render_line(&scoped_line);
+                        if let Some(parent) = container_stack.last_mut() {
+                            parent.2.push(row);
+                        } else {
+                            root_children.push(row);
+                        }
+                    }
+                }
+                continue;
+            } else if line.is_each_start() {
+                let key = line.tag.as_deref().unwrap_or("").to_string();
+                each_stack.push((key, Vec::new()));
+            } else {
+                each_stack.last_mut().unwrap().1.push(line.clone());
+            }
+            continue;
+        }
+
+        if line.is_each_start() {
+            let key = line.tag.as_deref().unwrap_or("").to_string();
+            each_stack.push((key, Vec::new()));
+            continue;
+        }
+
         // Collecting inside @parametric
         if !parametric_stack.is_empty() {
             if line.line_type == LineType::ContainerEnd {
