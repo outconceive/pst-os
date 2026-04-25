@@ -109,6 +109,9 @@ fn render_line(line: &Line) -> VNode {
             if !span_key.is_empty() {
                 attrs.insert(String::from("data-bind"), span_key);
             }
+            if let Some(&(span, total)) = line.cols.get(&start) {
+                attrs.insert(String::from("data-col"), format!("{},{}", span, total));
+            }
 
             match comp {
                 parse::TEXT_INPUT | parse::PASSWORD => {

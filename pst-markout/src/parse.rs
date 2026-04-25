@@ -32,6 +32,7 @@ pub struct Line {
     pub tag: Option<String>,
     pub config: Option<String>,
     pub constraints: BTreeMap<usize, Vec<String>>,
+    pub cols: BTreeMap<usize, (u8, u8)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +55,7 @@ impl Line {
             tag: None,
             config: None,
             constraints: BTreeMap::new(),
+            cols: BTreeMap::new(),
         }
     }
 
@@ -65,6 +67,7 @@ impl Line {
             tag: Some(String::from(tag)),
             config: config.map(String::from),
             constraints: BTreeMap::new(),
+            cols: BTreeMap::new(),
         }
     }
 
@@ -76,6 +79,7 @@ impl Line {
             tag: Some(String::from(tag)),
             config: None,
             constraints: BTreeMap::new(),
+            cols: BTreeMap::new(),
         }
     }
 }
@@ -126,6 +130,7 @@ fn parse_content_line(input: &str) -> Line {
     let mut state_keys = String::new();
     let mut styles = String::new();
     let mut constraints: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    let mut cols: BTreeMap<usize, (u8, u8)> = BTreeMap::new();
 
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
@@ -170,6 +175,9 @@ fn parse_content_line(input: &str) -> Line {
                 if !comp.constraints.is_empty() {
                     constraints.insert(pos, comp.constraints);
                 }
+                if let Some(c) = comp.col {
+                    cols.insert(pos, c);
+                }
 
                 i = end;
                 continue;
@@ -186,6 +194,7 @@ fn parse_content_line(input: &str) -> Line {
 
     let mut line = Line::content_row(&content, &components, &state_keys, &styles);
     line.constraints = constraints;
+    line.cols = cols;
     line
 }
 
@@ -196,6 +205,7 @@ struct ParsedComponent {
     style: Option<String>,
     width: usize,
     constraints: Vec<String>,
+    col: Option<(u8, u8)>, // (span, total) e.g. col-6 = (6,12)
 }
 
 fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usize)> {
@@ -244,10 +254,13 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
     let mut label = String::new();
     let mut style = None;
     let mut comp_constraints = Vec::new();
+    let mut col = None;
 
     for part in &parts[1..] {
         if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
             label = part[1..part.len() - 1].to_string();
+        } else if part.starts_with("col-") {
+            col = parse_col(part);
         } else if is_constraint_token(part) {
             comp_constraints.push(part.clone());
         } else if is_style(part) {
@@ -279,7 +292,20 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
         style,
         width: default_width,
         constraints: comp_constraints,
+        col,
     }, end))
+}
+
+fn parse_col(s: &str) -> Option<(u8, u8)> {
+    let rest = s.strip_prefix("col-")?;
+    if let Some(bracket) = rest.find('[') {
+        let n: u8 = rest[..bracket].parse().ok()?;
+        let total: u8 = rest[bracket + 1..].trim_end_matches(']').parse().ok()?;
+        if n > 0 && total > 0 && n <= total { Some((n, total)) } else { None }
+    } else {
+        let n: u8 = rest.parse().ok()?;
+        if n > 0 && n <= 12 { Some((n, 12)) } else { None }
+    }
 }
 
 fn is_constraint_token(s: &str) -> bool {
@@ -417,5 +443,30 @@ mod tests {
         assert!(flat.iter().any(|c| c.starts_with("right:")));
         assert!(flat.iter().any(|c| c.starts_with("gap-x:")));
         assert!(flat.iter().any(|c| c.starts_with("center-y:")));
+    }
+
+    #[test]
+    fn test_col_12_grid() {
+        let lines = parse("| {input:name col-8}  {button:go \"Go\" col-4}");
+        assert_eq!(lines[0].cols.len(), 2);
+        let cols: Vec<&(u8, u8)> = lines[0].cols.values().collect();
+        assert!(cols.contains(&&(8, 12)));
+        assert!(cols.contains(&&(4, 12)));
+    }
+
+    #[test]
+    fn test_col_custom_grid() {
+        let lines = parse("| {input:name col-3[5]}");
+        let cols: Vec<&(u8, u8)> = lines[0].cols.values().collect();
+        assert_eq!(cols[0], &(3, 5));
+    }
+
+    #[test]
+    fn test_col_flows_to_vnode() {
+        use crate::render;
+        let lines = parse("| {input:name col-6}");
+        let vdom = render::render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("data-col=\"6,12\""));
     }
 }

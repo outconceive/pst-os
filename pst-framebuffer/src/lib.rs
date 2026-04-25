@@ -294,6 +294,18 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
     }
 }
 
+fn col_width(el: &VElement, container_w: usize) -> Option<usize> {
+    if let Some(col_str) = el.attrs.get("data-col") {
+        let parts: Vec<&str> = col_str.split(',').collect();
+        if parts.len() == 2 {
+            if let (Ok(span), Ok(total)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
+                if total > 0 { return Some((container_w * span) / total); }
+            }
+        }
+    }
+    None
+}
+
 fn render_vnode_inline(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Color, fg: Color) -> (usize, usize) {
     match node {
         VNode::Text(t) => {
@@ -307,7 +319,7 @@ fn render_vnode_inline(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, b
             let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
 
             if class.contains("mc-input") && !class.contains("mc-input-password") {
-                let fw = 200;
+                let fw = col_width(el, fb.width.saturating_sub(x * 2)).unwrap_or(200);
                 let fh = 22;
                 let tab_w = 5;
                 fb.fill_rect(x, y, fw, fh, Color::rgb(50, 50, 55));
