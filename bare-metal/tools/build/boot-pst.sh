@@ -106,6 +106,8 @@ if [ "$BUILD_ONLY" = false ]; then
     qemu-system-x86_64 \
         -cdrom "$IMAGE_DIR/pst-os.iso" \
         -drive file="$DISK",format=raw,if=virtio \
+        -device virtio-net-pci,netdev=net0 \
+        -netdev user,id=net0 \
         -cpu qemu64,+pdpe1gb \
         -m 2G \
         -smp 2 \

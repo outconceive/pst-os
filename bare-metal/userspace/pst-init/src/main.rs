@@ -13,6 +13,7 @@ mod storage;
 mod codeview;
 mod editor;
 mod browser;
+mod net;
 
 // Custom entry point: save bootinfo (rdi from kernel) before sel4runtime runs
 #[no_mangle]
@@ -264,6 +265,12 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
                 let (store, next_slot) = storage::setup(
                     bi_ptr, vga_state.pci_cap, vga_state.next_slot,
                 );
+
+                // Try to set up network
+                let (net_dev, next_slot) = net::setup_with_port(vga_state.pci_cap, next_slot);
+                if net_dev.is_some() {
+                    serial_print("[net] Network available\n");
+                }
 
                 serial_print("\n========================================\n");
                 serial_print("  PST OS boot complete.\n");
