@@ -45,6 +45,9 @@ pub fn render(lines: &[Line]) -> VNode {
 
             let mut attrs = BTreeMap::new();
             attrs.insert(String::from("class"), format!("mc-{}", tag));
+            if let Some(ref cfg) = line.config {
+                attrs.insert(String::from("data-config"), cfg.clone());
+            }
             container_stack.push((String::from(tag), attrs, Vec::new()));
             continue;
         }

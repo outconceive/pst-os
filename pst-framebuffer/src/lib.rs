@@ -163,20 +163,28 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
             let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
 
             // Card — draw background + border
-            if class.contains("mc-card") {
+            if class.contains("mc-card") || class.contains("mc-nav") || class.contains("mc-header")
+                || class.contains("mc-footer") || class.contains("mc-section") || class.contains("mc-form")
+                || class.contains("mc-aside") {
+                let cfg = parse_config(el.attrs.get("data-config").map(|s| s.as_str()).unwrap_or(""));
                 let card_x = x;
                 let card_y = cy;
+                let pad = cfg.padding;
+                let card_max_w = cfg.max_width.unwrap_or(fb.width - card_x * 2);
+                let card_w = card_max_w.min(fb.width - card_x * 2);
 
-                // Render children to measure height
-                let mut inner_y = card_y + 12;
+                let mut inner_y = card_y + pad;
                 for child in &el.children {
-                    inner_y = render_vnode(fb, child, card_x + 16, inner_y, bg, fg);
-                    inner_y += 4;
+                    inner_y = render_vnode(fb, child, card_x + pad, inner_y, bg, fg);
+                    inner_y += cfg.gap;
                 }
 
-                // Draw card border
-                let card_h = inner_y - card_y + 12;
-                let card_w = fb.width - card_x * 2;
+                let card_h = if let Some(h) = cfg.height {
+                    h
+                } else {
+                    inner_y - card_y + pad
+                };
+
                 fb.draw_hline(card_x, card_y, card_w, Color::GRAY);
                 fb.draw_hline(card_x, card_y + card_h, card_w, Color::GRAY);
                 for dy in 0..card_h {
@@ -525,6 +533,43 @@ fn render_vnode_inline(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, b
             }
             (cx - x, max_h)
         }
+    }
+}
+
+struct ContainerConfig {
+    padding: usize,
+    width: Option<usize>,
+    max_width: Option<usize>,
+    height: Option<usize>,
+    gap: usize,
+}
+
+fn parse_config(config: &str) -> ContainerConfig {
+    let mut cfg = ContainerConfig { padding: 12, width: None, max_width: None, height: None, gap: 4 };
+    for part in config.split(|c: char| c == ',' || c == ' ') {
+        let part = part.trim();
+        if let Some((key, val)) = part.split_once(':') {
+            let px = parse_px_value(val);
+            match key {
+                "padding" => cfg.padding = px,
+                "width" => cfg.width = Some(px),
+                "max-width" => cfg.max_width = Some(px),
+                "height" => cfg.height = Some(px),
+                "max-height" => cfg.height = Some(px),
+                "gap" => cfg.gap = px,
+                _ => {}
+            }
+        }
+    }
+    cfg
+}
+
+fn parse_px_value(s: &str) -> usize {
+    let s = s.trim().trim_end_matches("px").trim_end_matches("rem");
+    if let Some(dot) = s.find('.') {
+        s[..dot].parse().unwrap_or(0)
+    } else {
+        s.parse().unwrap_or(0)
     }
 }
 

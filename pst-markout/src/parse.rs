@@ -509,6 +509,16 @@ mod tests {
     }
 
     #[test]
+    fn test_container_config() {
+        let lines = parse("@card padding:24,max-width:400px\n| Hello\n@end card");
+        assert_eq!(lines[0].config, Some(String::from("padding:24,max-width:400px")));
+        use crate::render;
+        let vdom = render::render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("data-config"));
+    }
+
+    #[test]
     fn test_col_flows_to_vnode() {
         use crate::render;
         let lines = parse("| {input:name col-6}");
