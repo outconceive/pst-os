@@ -1,2 +1,4 @@
 target/
 Cargo.lock
+psn/
+pst-serial.log
