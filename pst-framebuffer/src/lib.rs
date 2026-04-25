@@ -195,24 +195,78 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
                 return cy + 2;
             }
 
-            // Input
-            if class.contains("mc-input") {
-                let w = 160;
-                let h = GLYPH_HEIGHT + 8;
-                fb.fill_rect(x, cy, w, h, Color::WHITE);
-                fb.draw_hline(x, cy, w, Color::LIGHT_GRAY);
-                fb.draw_hline(x, cy + h - 1, w, Color::LIGHT_GRAY);
-                return cy + h + 4;
+            // Input (text)
+            if class.contains("mc-input") && !class.contains("mc-input-password") {
+                let fw = 200;
+                let fh = 22;
+                let tab_w = 5;
+                let tab_color = Color::rgb(59, 130, 246); // blue
+                fb.fill_rect(x, cy, fw, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, cy, tab_w, fh, tab_color);
+                fb.fill_rect(x, cy, tab_w, 1, Color::rgb(99, 170, 255));
+                fb.draw_hline(x, cy, fw, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, cy + fh - 1, fw, Color::rgb(40, 40, 45));
+                return cy + fh + 4;
+            }
+
+            // Password
+            if class.contains("mc-input-password") {
+                let fw = 200;
+                let fh = 22;
+                let tab_w = 5;
+                let tab_color = Color::rgb(239, 68, 68); // red
+                fb.fill_rect(x, cy, fw, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, cy, tab_w, fh, tab_color);
+                fb.fill_rect(x, cy, tab_w, 1, Color::rgb(255, 108, 108));
+                fb.draw_hline(x, cy, fw, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, cy + fh - 1, fw, Color::rgb(40, 40, 45));
+                return cy + fh + 4;
+            }
+
+            // Checkbox
+            if class.contains("mc-checkbox") {
+                let tab_w = 5;
+                let tab_color = Color::rgb(16, 185, 129); // green
+                let fw = 22;
+                let fh = 22;
+                fb.fill_rect(x, cy, fw, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, cy, tab_w, fh, tab_color);
+                fb.fill_rect(x, cy, tab_w, 1, Color::rgb(56, 225, 169));
+                fb.draw_hline(x, cy, fw, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, cy + fh - 1, fw, Color::rgb(40, 40, 45));
+                // Empty checkbox square
+                fb.fill_rect(x + tab_w + 3, cy + 3, 14, 14, Color::rgb(40, 40, 45));
+                fb.draw_hline(x + tab_w + 3, cy + 3, 14, Color::rgb(70, 70, 75));
+                return cy + fh + 4;
             }
 
             // Button
             if class.contains("mc-button") {
                 let label = text_content(node);
-                let w = label.len() * GLYPH_WIDTH + 16;
-                let h = GLYPH_HEIGHT + 8;
-                fb.fill_rect(x, cy, w, h, Color::BLUE);
-                fb.draw_text(x + 8, cy + 4, &label, Color::WHITE, Color::BLUE);
-                return cy + h + 4;
+                let w = label.len() * GLYPH_WIDTH + 24;
+                let h = GLYPH_HEIGHT + 12;
+                let btn_color = if class.contains("mc-primary") {
+                    Color::rgb(59, 130, 246)
+                } else if class.contains("mc-danger") {
+                    Color::rgb(239, 68, 68)
+                } else if class.contains("mc-ghost") {
+                    Color::rgb(55, 55, 60)
+                } else {
+                    Color::rgb(59, 130, 246)
+                };
+                fb.fill_rect(x, cy, w, h, btn_color);
+                fb.draw_hline(x, cy, w, Color::rgb(
+                    btn_color.r.saturating_add(40),
+                    btn_color.g.saturating_add(40),
+                    btn_color.b.saturating_add(40),
+                ));
+                fb.draw_hline(x, cy + h - 1, w, Color::rgb(
+                    btn_color.r.saturating_sub(30),
+                    btn_color.g.saturating_sub(30),
+                    btn_color.b.saturating_sub(30),
+                ));
+                fb.draw_text(x + 12, cy + 6, &label, Color::WHITE, btn_color);
+                return cy + h + 6;
             }
 
             // Divider

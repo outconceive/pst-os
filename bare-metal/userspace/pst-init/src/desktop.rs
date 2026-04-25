@@ -262,74 +262,34 @@ fn render_desktop(windows: &[Window], focused: usize, _fb_vaddr: u64) {
 }
 
 fn run_form(ps2: &mut Ps2, fb_vaddr: u64) {
-    use crate::gui_input::InputField;
+    if fb_vaddr == 0 { return; }
 
-    let mut fields = [
-        InputField::text(60, 120, "Username"),
-        InputField::password(60, 152, "Password"),
-        InputField::checkbox(60, 184, "Remember me"),
-    ];
-    let mut focus_idx: usize = 0;
-    fields[0].focused = true;
+    let form_doc = "\
+@card
+| Login
+|
+| {input:username}  Username
+| {password:pass}  Password
+| {checkbox:remember}  Remember me
+|
+| {button:login \"Sign In\" primary}
+@end card";
 
+    use pst_framebuffer::{Framebuffer, Color, render_markout};
+    let mut fb = Framebuffer::new(640, 480);
+    fb.clear(Color::DARK_BG);
+    render_markout(&mut fb, form_doc, Color::DARK_BG, Color::WHITE);
+
+    // Status text
+    fb.draw_text_transparent(16, 460, "Esc to close", Color::GRAY);
+
+    let vga = fb_vaddr as *mut u8;
+    unsafe { core::ptr::copy_nonoverlapping(fb.pixels.as_ptr(), vga, 640 * 4 * 480); }
+
+    // Wait for Esc
     loop {
-        // Clear form area
-        if fb_vaddr != 0 {
-            let vga = fb_vaddr as *mut u8;
-            fill(vga, 0, 0, 640, 448, pst_framebuffer::Color::rgb(30, 30, 30));
-
-            // Title
-            draw_text(vga, 60, 60, "PST OS Login", pst_framebuffer::Color::WHITE);
-            draw_text(vga, 60, 80, "____________________", pst_framebuffer::Color::rgb(59, 130, 246));
-
-            // Draw fields
-            for f in &fields {
-                f.draw(fb_vaddr);
-            }
-
-            // Submit button
-            fill(vga, 60, 224, 120, 28, pst_framebuffer::Color::rgb(59, 130, 246));
-            fill(vga, 60, 224, 120, 1, pst_framebuffer::Color::rgb(99, 170, 255));
-            fill(vga, 60, 251, 120, 1, pst_framebuffer::Color::rgb(30, 90, 200));
-            draw_text(vga, 88, 232, "Sign In", pst_framebuffer::Color::WHITE);
-
-            // Esc hint
-            draw_text(vga, 60, 270, "Esc to close  Tab to switch", pst_framebuffer::Color::rgb(100, 100, 100));
-        }
-
-        let event = ps2.read_event();
-        match event {
-            InputEvent::Key(ch) => {
-                if ch == 0x1B { return; } // Esc = close
-                if ch == b'\t' {
-                    fields[focus_idx].focused = false;
-                    focus_idx = (focus_idx + 1) % fields.len();
-                    fields[focus_idx].focused = true;
-                    continue;
-                }
-                fields[focus_idx].handle_key(ch);
-            }
-            InputEvent::Click { x, y } => {
-                // Click on a field
-                for (i, f) in fields.iter().enumerate() {
-                    if f.contains(x, y) {
-                        fields[focus_idx].focused = false;
-                        focus_idx = i;
-                        fields[focus_idx].focused = true;
-                        if fields[focus_idx].input_type == crate::gui_input::InputType::Checkbox {
-                            fields[focus_idx].checked = !fields[focus_idx].checked;
-                        }
-                        break;
-                    }
-                }
-                // Click submit
-                if x >= 60 && x < 180 && y >= 224 && y < 252 {
-                    serial_print("[form] Submit: ");
-                    serial_print(&fields[0].value);
-                    serial_print("\n");
-                    return;
-                }
-            }
+        match ps2.read_event() {
+            InputEvent::Key(0x1B) => return,
             _ => {}
         }
     }
