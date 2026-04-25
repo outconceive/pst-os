@@ -33,7 +33,8 @@ pub struct Line {
     pub config: Option<String>,
     pub constraints: BTreeMap<usize, Vec<String>>,
     pub cols: BTreeMap<usize, (u8, u8)>,
-    pub responsive: BTreeMap<usize, Vec<(String, u8, u8)>>, // pos → [(breakpoint, span, total)]
+    pub responsive: BTreeMap<usize, Vec<(String, u8, u8)>>,
+    pub validates: BTreeMap<usize, String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +59,7 @@ impl Line {
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
+            validates: BTreeMap::new(),
         }
     }
 
@@ -71,6 +73,7 @@ impl Line {
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
+            validates: BTreeMap::new(),
         }
     }
 
@@ -84,6 +87,7 @@ impl Line {
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
+            validates: BTreeMap::new(),
         }
     }
 
@@ -96,6 +100,7 @@ impl Line {
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
+            validates: BTreeMap::new(),
         }
     }
 
@@ -112,6 +117,7 @@ impl Line {
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
             responsive: BTreeMap::new(),
+            validates: BTreeMap::new(),
         }
     }
 }
@@ -178,6 +184,7 @@ fn parse_content_line(input: &str) -> Line {
     let mut constraints: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     let mut cols: BTreeMap<usize, (u8, u8)> = BTreeMap::new();
     let mut responsive_map: BTreeMap<usize, Vec<(String, u8, u8)>> = BTreeMap::new();
+    let mut validates_map: BTreeMap<usize, String> = BTreeMap::new();
 
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
@@ -228,6 +235,9 @@ fn parse_content_line(input: &str) -> Line {
                 if !comp.responsive.is_empty() {
                     responsive_map.insert(pos, comp.responsive);
                 }
+                if let Some(v) = comp.validate {
+                    validates_map.insert(pos, v);
+                }
 
                 i = end;
                 continue;
@@ -246,6 +256,7 @@ fn parse_content_line(input: &str) -> Line {
     line.constraints = constraints;
     line.cols = cols;
     line.responsive = responsive_map;
+    line.validates = validates_map;
     line
 }
 
@@ -258,6 +269,7 @@ struct ParsedComponent {
     constraints: Vec<String>,
     col: Option<(u8, u8)>,
     responsive: Vec<(String, u8, u8)>,
+    validate: Option<String>,
 }
 
 fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usize)> {
@@ -308,10 +320,13 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
     let mut comp_constraints = Vec::new();
     let mut col = None;
     let mut responsive = Vec::new();
+    let mut validate = None;
 
     for part in &parts[1..] {
         if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
             label = part[1..part.len() - 1].to_string();
+        } else if part.starts_with("validate:") {
+            validate = Some(String::from(&part[9..]));
         } else if part.starts_with("col-") {
             col = parse_col(part);
         } else if part.starts_with("sm:") || part.starts_with("md:") || part.starts_with("lg:") || part.starts_with("xl:") {
@@ -351,6 +366,7 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
         constraints: comp_constraints,
         col,
         responsive,
+        validate,
     }, end))
 }
 
@@ -548,6 +564,23 @@ mod tests {
         assert!(html.contains("data-responsive"));
         assert!(html.contains("sm:12,12"));
         assert!(html.contains("lg:6,12"));
+    }
+
+    #[test]
+    fn test_validate_parse() {
+        let lines = parse("| {input:email validate:required,email}");
+        let vals: Vec<&String> = lines[0].validates.values().collect();
+        assert_eq!(vals.len(), 1);
+        assert_eq!(vals[0], "required,email");
+    }
+
+    #[test]
+    fn test_validate_flows_to_vnode() {
+        use crate::render;
+        let lines = parse("| {input:pw validate:required,min:8}");
+        let vdom = render::render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("data-validate=\"required,min:8\""));
     }
 
     #[test]

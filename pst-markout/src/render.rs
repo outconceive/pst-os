@@ -175,6 +175,9 @@ fn render_line(line: &Line) -> VNode {
             if let Some(&(span, total)) = line.cols.get(&start) {
                 attrs.insert(String::from("data-col"), format!("{},{}", span, total));
             }
+            if let Some(v) = line.validates.get(&start) {
+                attrs.insert(String::from("data-validate"), v.clone());
+            }
             if let Some(resp) = line.responsive.get(&start) {
                 let val: String = resp.iter()
                     .map(|(bp, n, t)| format!("{}:{},{}", bp, n, t))

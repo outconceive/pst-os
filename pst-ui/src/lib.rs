@@ -31,6 +31,7 @@ pub struct UiRow {
     pub w: usize,
     pub h: usize,
     pub style: String,
+    pub validate: String,
 }
 
 impl UiRow {
@@ -48,6 +49,7 @@ impl UiRow {
             focus: false, hover: false, enabled: true,
             tab_order: tab, x: 0, y: 0, w, h,
             style: String::new(),
+            validate: String::new(),
         }
     }
 }
@@ -82,12 +84,18 @@ impl UiState {
                 let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
                 let bind = el.attrs.get("data-bind").map(|s| s.as_str()).unwrap_or("");
 
+                let validate_str = el.attrs.get("data-validate").map(|s| s.as_str()).unwrap_or("");
+
                 if class.contains("mc-input") && !class.contains("mc-input-password") {
                     let tab = self.rows.len();
-                    self.rows.push(UiRow::new(ComponentType::Input, bind, bind, tab));
+                    let mut row = UiRow::new(ComponentType::Input, bind, bind, tab);
+                    row.validate = String::from(validate_str);
+                    self.rows.push(row);
                 } else if class.contains("mc-input-password") {
                     let tab = self.rows.len();
-                    self.rows.push(UiRow::new(ComponentType::Password, bind, bind, tab));
+                    let mut row = UiRow::new(ComponentType::Password, bind, bind, tab);
+                    row.validate = String::from(validate_str);
+                    self.rows.push(row);
                 } else if class.contains("mc-checkbox") {
                     let tab = self.rows.len();
                     self.rows.push(UiRow::new(ComponentType::Checkbox, bind, bind, tab));
@@ -212,6 +220,44 @@ impl UiState {
         self.focused = Some(idx);
     }
 
+    pub fn validate(&self) -> Vec<(String, String)> {
+        let mut errors = Vec::new();
+        for row in &self.rows {
+            if row.validate.is_empty() { continue; }
+            for rule in row.validate.split(',') {
+                let err = match rule {
+                    "required" => {
+                        if row.value.is_empty() { Some(format!("{} is required", row.state_key)) } else { None }
+                    }
+                    "email" => {
+                        if !row.value.is_empty() && !row.value.contains('@') {
+                            Some(format!("{} must be a valid email", row.state_key))
+                        } else { None }
+                    }
+                    _ if rule.starts_with("min:") => {
+                        if let Ok(min) = rule[4..].parse::<usize>() {
+                            if row.value.len() < min {
+                                Some(format!("{} must be at least {} characters", row.state_key, min))
+                            } else { None }
+                        } else { None }
+                    }
+                    _ if rule.starts_with("max:") => {
+                        if let Ok(max) = rule[4..].parse::<usize>() {
+                            if row.value.len() > max {
+                                Some(format!("{} must be at most {} characters", row.state_key, max))
+                            } else { None }
+                        } else { None }
+                    }
+                    _ => None,
+                };
+                if let Some(msg) = err {
+                    errors.push((row.state_key.clone(), msg));
+                }
+            }
+        }
+        errors
+    }
+
     pub fn get_value(&self, key: &str) -> &str {
         for row in &self.rows {
             if row.state_key == key { return &row.value; }
@@ -284,6 +330,31 @@ mod tests {
         ui.handle_key(b'x');
         ui.handle_key(b'y');
         assert_eq!(ui.get_value("pw"), "xy");
+    }
+
+    #[test]
+    fn test_validate_required() {
+        let mut ui = UiState::from_markout("| {input:email validate:required,email}");
+        let errors = ui.validate();
+        assert!(errors.iter().any(|(_, msg)| msg.contains("required")));
+
+        ui.handle_key(b'a');
+        let errors = ui.validate();
+        assert!(errors.iter().any(|(_, msg)| msg.contains("email")));
+
+        // Fix it
+        let idx = ui.rows.iter().position(|r| r.component == ComponentType::Input).unwrap();
+        ui.rows[idx].value = String::from("a@b.com");
+        let errors = ui.validate();
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_validate_min() {
+        let mut ui = UiState::from_markout("| {password:pw validate:min:8}");
+        ui.handle_key(b'a'); ui.handle_key(b'b'); ui.handle_key(b'c');
+        let errors = ui.validate();
+        assert!(errors.iter().any(|(_, msg)| msg.contains("at least 8")));
     }
 
     #[test]
