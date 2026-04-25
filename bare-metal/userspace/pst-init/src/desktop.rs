@@ -96,27 +96,26 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                 let row = y / pst_framebuffer::font::GLYPH_HEIGHT;
                 let col = x / pst_framebuffer::font::GLYPH_WIDTH;
 
-                // Button bar at row 28 (0-indexed)
-                if row >= 28 {
-                    // [Editor]  [Markout]  [Browser]  [Code]  [Save]
-                    // cols: 1-9, 11-20, 22-31, 33-39, 41-47
-                    if col <= 9 {
+                // Button bar at y >= 448
+                if y >= 448 {
+                    // Buttons: Editor(8-88), Markout(96-176), Browser(184-264), Code(272-336), Save(344-408)
+                    if x >= 8 && x < 88 {
                         let ed = Editor::new("untitled.txt");
                         serial_print(&ed.render());
                         editor = Some(ed);
-                    } else if col <= 20 {
+                    } else if x >= 96 && x < 176 {
                         let ed = Editor::new("untitled.md");
                         serial_print(&ed.render());
                         editor = Some(ed);
-                    } else if col <= 31 {
+                    } else if x >= 184 && x < 264 {
                         browser::run_with_ps2(ps2, &mut store, &mut net);
                         render_desktop(&windows, focused, fb_vaddr);
                         print_prompt(&windows[focused]);
-                    } else if col <= 39 {
+                    } else if x >= 272 && x < 336 {
                         let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
                         serial_print(&cv.render());
                         codeview = Some(cv);
-                    } else {
+                    } else if x >= 344 && x < 408 {
                         if let Some(ref mut s) = store {
                             let snapshot: Vec<(String, Vec<String>)> = windows.iter()
                                 .map(|w| (w.title.clone(), w.doc.clone())).collect();
@@ -252,13 +251,93 @@ fn render_desktop(windows: &[Window], focused: usize, _fb_vaddr: u64) {
     serial_print("\x1b[2J\x1b[H");
     serial_print(&output);
 
-    // Button bar at bottom
-    serial_print("\x1b[29;1H");
-    serial_print("\x1b[7m [Editor] \x1b[0m ");
-    serial_print("\x1b[7m [Markout] \x1b[0m ");
-    serial_print("\x1b[7m [Browser] \x1b[0m ");
-    serial_print("\x1b[7m [Code] \x1b[0m ");
-    serial_print("\x1b[7m [Save] \x1b[0m");
+    // Draw GUI button bar directly to framebuffer
+    draw_button_bar(_fb_vaddr);
+}
+
+fn draw_button_bar(fb_vaddr: u64) {
+    if fb_vaddr == 0 { return; }
+    use pst_framebuffer::Color;
+    let vga = fb_vaddr as *mut u8;
+    let w = 640usize;
+    let bar_y = 448; // near bottom
+    let bar_h = 28;
+
+    // Bar background
+    fill(vga, 0, bar_y, w, bar_h, Color::rgb(45, 45, 45));
+
+    // Buttons: x, width, label, color
+    let buttons: [(usize, usize, &str, Color); 5] = [
+        (8,   80,  "Editor",  Color::rgb(59, 130, 246)),
+        (96,  80,  "Markout", Color::rgb(16, 185, 129)),
+        (184, 80,  "Browser", Color::rgb(245, 158, 11)),
+        (272, 64,  "Code",    Color::rgb(139, 92, 246)),
+        (344, 64,  "Save",    Color::rgb(107, 114, 128)),
+    ];
+
+    for (bx, bw, label, color) in &buttons {
+        // Button body
+        fill(vga, *bx, bar_y + 4, *bw, 20, *color);
+        // Highlight edge (top)
+        fill(vga, *bx, bar_y + 4, *bw, 1, lighten(*color));
+        // Shadow edge (bottom)
+        fill(vga, *bx, bar_y + 23, *bw, 1, darken(*color));
+        // Text centered
+        let tx = bx + (bw - label.len() * 8) / 2;
+        draw_text(vga, tx, bar_y + 10, label, Color::WHITE);
+    }
+}
+
+fn fill(vga: *mut u8, x: usize, y: usize, w: usize, h: usize, c: pst_framebuffer::Color) {
+    for dy in 0..h {
+        for dx in 0..w {
+            let px = x + dx;
+            let py = y + dy;
+            if px < 640 && py < 480 {
+                let off = (py * 640 + px) * 4;
+                unsafe {
+                    *vga.add(off) = c.b;
+                    *vga.add(off + 1) = c.g;
+                    *vga.add(off + 2) = c.r;
+                    *vga.add(off + 3) = 0xFF;
+                }
+            }
+        }
+    }
+}
+
+fn draw_text(vga: *mut u8, x: usize, y: usize, s: &str, fg: pst_framebuffer::Color) {
+    let mut cx = x;
+    for ch in s.bytes() {
+        let glyph = pst_framebuffer::font::glyph(ch);
+        for gy in 0..pst_framebuffer::font::GLYPH_HEIGHT {
+            let bits = glyph[gy];
+            for gx in 0..pst_framebuffer::font::GLYPH_WIDTH {
+                if bits & (0x80 >> gx) != 0 {
+                    let px = cx + gx;
+                    let py = y + gy;
+                    if px < 640 && py < 480 {
+                        let off = (py * 640 + px) * 4;
+                        unsafe {
+                            *vga.add(off) = fg.b;
+                            *vga.add(off + 1) = fg.g;
+                            *vga.add(off + 2) = fg.r;
+                            *vga.add(off + 3) = 0xFF;
+                        }
+                    }
+                }
+            }
+        }
+        cx += pst_framebuffer::font::GLYPH_WIDTH;
+    }
+}
+
+fn lighten(c: pst_framebuffer::Color) -> pst_framebuffer::Color {
+    pst_framebuffer::Color::rgb(c.r.saturating_add(40), c.g.saturating_add(40), c.b.saturating_add(40))
+}
+
+fn darken(c: pst_framebuffer::Color) -> pst_framebuffer::Color {
+    pst_framebuffer::Color::rgb(c.r.saturating_sub(30), c.g.saturating_sub(30), c.b.saturating_sub(30))
 }
 
 fn print_prompt(win: &Window) {
