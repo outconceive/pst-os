@@ -61,23 +61,85 @@ const DEMO_OUTPUT: &[&str] = &[
     "PST OS ready.",
 ];
 
-pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net::VirtioNet>, fb_vaddr: u64) {
-    let mut windows = Vec::new();
+const DEFAULT_DESKTOP: &str = "\
+Terminal
+Scratch";
 
-    let restored = store.as_mut().and_then(|s| s.load_desktop());
-    if let Some(saved) = restored {
-        for (title, lines) in saved {
-            let mut w = Window::new(&title);
-            w.doc = lines;
-            windows.push(w);
+const DEFAULT_WELCOME: &str = "\
+@card
+| Welcome to PST OS
+| ==================
+|
+| {label:sub \"Parallel String Theory\" primary}
+| {spacer:s1}
+| {label:hint \"F1=edit F2=md F3=web F4=code F6=form\"}
+|
+| {link:docs \"Documentation\" href:/pst/docs}
+| {spacer:s2}
+| {link:about \"About\" href:/pst/about}
+@end card";
+
+const DEFAULT_THEME: &str = "\
+bg:30,30,30
+fg:255,255,255
+accent:59,130,246
+danger:239,68,68
+success:16,185,129
+warning:245,158,11";
+
+pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net::VirtioNet>, fb_vaddr: u64) {
+    // Seed default config files if storage exists
+    if let Some(ref mut s) = store {
+        if s.load_file("/pst/desktop.md").is_none() {
+            s.save_file("/pst/desktop.md", DEFAULT_DESKTOP);
+            s.save_file("/pst/welcome.md", DEFAULT_WELCOME);
+            s.save_file("/pst/theme.md", DEFAULT_THEME);
+            serial_print("[desktop] Seeded /pst/ config files\n");
         }
-        serial_print("[desktop] Restored from disk\n");
     }
 
+    // Load window layout from /pst/desktop.md
+    let mut windows = Vec::new();
+
+    let desktop_config = store.as_mut().and_then(|s| s.load_file("/pst/desktop.md"));
+    if let Some(config) = desktop_config {
+        for name in config.lines() {
+            let name = name.trim();
+            if !name.is_empty() {
+                windows.push(Window::new(name));
+            }
+        }
+        serial_print("[desktop] Layout loaded from /pst/desktop.md\n");
+    }
+
+    // Fall back to saved desktop state
+    if windows.is_empty() {
+        let restored = store.as_mut().and_then(|s| s.load_desktop());
+        if let Some(saved) = restored {
+            for (title, lines) in saved {
+                let mut w = Window::new(&title);
+                w.doc = lines;
+                windows.push(w);
+            }
+            serial_print("[desktop] Restored from saved state\n");
+        }
+    }
+
+    // Final fallback
     if windows.is_empty() {
         windows.push(Window::new("Terminal"));
         windows.push(Window::new("Scratch"));
-        windows[0].doc.push(String::from("| Welcome to PST OS"));
+    }
+
+    // Load welcome content from /pst/welcome.md into first window if empty
+    if !windows.is_empty() && windows[0].doc.is_empty() {
+        if let Some(welcome) = store.as_mut().and_then(|s| s.load_file("/pst/welcome.md")) {
+            for line in welcome.lines() {
+                windows[0].doc.push(String::from(line));
+            }
+        } else {
+            windows[0].doc.push(String::from("| Welcome to PST OS"));
+        }
     }
 
     let mut focused: usize = 0;

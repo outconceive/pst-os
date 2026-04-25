@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
 use pst_markout::parse::{self, Line, LineType};
-use pst_markout::vnode::VNode;
+use pst_markout::vnode::{VNode, VElement};
 use pst_markout::render;
 
 use font::{GLYPH_WIDTH, GLYPH_HEIGHT};
