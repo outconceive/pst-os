@@ -307,8 +307,8 @@ impl Ps2 {
         }
 
         // 3. Draw cursor — ring + iris
-        let over_button = ny >= 448 && ((nx >= 8 && nx < 88) || (nx >= 96 && nx < 176) ||
-            (nx >= 184 && nx < 264) || (nx >= 272 && nx < 336) || (nx >= 344 && nx < 408));
+        let over_button = ny >= 448 && ((nx >= 8 && nx < 80) || (nx >= 84 && nx < 164) ||
+            (nx >= 168 && nx < 244) || (nx >= 248 && nx < 304) || (nx >= 308 && nx < 364) || (nx >= 368 && nx < 424));
         let (ir, ig, ib) = if over_button {
             (50u8, 255u8, 100u8) // bright green = go
         } else {

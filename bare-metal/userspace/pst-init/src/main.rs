@@ -18,6 +18,7 @@ mod vgacon;
 mod mouse;
 mod input;
 mod ps2;
+mod gui_input;
 mod net;
 mod rng;
 

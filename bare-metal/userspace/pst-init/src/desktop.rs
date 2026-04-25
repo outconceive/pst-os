@@ -99,23 +99,28 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                 // Button bar at y >= 448
                 if y >= 448 {
                     // Buttons: Editor(8-88), Markout(96-176), Browser(184-264), Code(272-336), Save(344-408)
-                    if x >= 8 && x < 88 {
+                    if x >= 8 && x < 80 {
                         let ed = Editor::new("untitled.txt");
                         serial_print(&ed.render());
                         editor = Some(ed);
-                    } else if x >= 96 && x < 176 {
+                    } else if x >= 84 && x < 164 {
                         let ed = Editor::new("untitled.md");
                         serial_print(&ed.render());
                         editor = Some(ed);
-                    } else if x >= 184 && x < 264 {
+                    } else if x >= 168 && x < 244 {
                         browser::run_with_ps2(ps2, &mut store, &mut net);
                         render_desktop(&windows, focused, fb_vaddr);
                         print_prompt(&windows[focused]);
-                    } else if x >= 272 && x < 336 {
+                    } else if x >= 248 && x < 304 {
                         let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
                         serial_print(&cv.render());
                         codeview = Some(cv);
-                    } else if x >= 344 && x < 408 {
+                    } else if x >= 308 && x < 364 {
+                        // Form
+                        run_form(ps2, fb_vaddr);
+                        render_desktop(&windows, focused, fb_vaddr);
+                        print_prompt(&windows[focused]);
+                    } else if x >= 368 && x < 424 {
                         if let Some(ref mut s) = store {
                             let snapshot: Vec<(String, Vec<String>)> = windows.iter()
                                 .map(|w| (w.title.clone(), w.doc.clone())).collect();
@@ -171,13 +176,14 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
             continue;
         }
 
-        // F1=editor  F2=markout  F3=browser  F4=code  F5=convergence
+        // F1=editor  F2=markout  F3=browser  F4=code  F5=convergence  F6=form
         match ch {
             ps2::KEY_F1 => { let ed = Editor::new("untitled.txt"); serial_print(&ed.render()); editor = Some(ed); continue; }
             ps2::KEY_F2 => { let ed = Editor::new("untitled.md"); serial_print(&ed.render()); editor = Some(ed); continue; }
             ps2::KEY_F3 => { browser::run_with_ps2(ps2, &mut store, &mut net); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
             ps2::KEY_F4 => { let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT); serial_print(&cv.render()); codeview = Some(cv); continue; }
             ps2::KEY_F5 => { convergence::run_with_ps2(ps2); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
+            ps2::KEY_F6 => { run_form(ps2, fb_vaddr); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
             _ => {}
         }
 
@@ -255,6 +261,80 @@ fn render_desktop(windows: &[Window], focused: usize, _fb_vaddr: u64) {
     draw_button_bar(_fb_vaddr);
 }
 
+fn run_form(ps2: &mut Ps2, fb_vaddr: u64) {
+    use crate::gui_input::InputField;
+
+    let mut fields = [
+        InputField::text(60, 120, "Username"),
+        InputField::password(60, 152, "Password"),
+        InputField::checkbox(60, 184, "Remember me"),
+    ];
+    let mut focus_idx: usize = 0;
+    fields[0].focused = true;
+
+    loop {
+        // Clear form area
+        if fb_vaddr != 0 {
+            let vga = fb_vaddr as *mut u8;
+            fill(vga, 0, 0, 640, 448, pst_framebuffer::Color::rgb(30, 30, 30));
+
+            // Title
+            draw_text(vga, 60, 60, "PST OS Login", pst_framebuffer::Color::WHITE);
+            draw_text(vga, 60, 80, "____________________", pst_framebuffer::Color::rgb(59, 130, 246));
+
+            // Draw fields
+            for f in &fields {
+                f.draw(fb_vaddr);
+            }
+
+            // Submit button
+            fill(vga, 60, 224, 120, 28, pst_framebuffer::Color::rgb(59, 130, 246));
+            fill(vga, 60, 224, 120, 1, pst_framebuffer::Color::rgb(99, 170, 255));
+            fill(vga, 60, 251, 120, 1, pst_framebuffer::Color::rgb(30, 90, 200));
+            draw_text(vga, 88, 232, "Sign In", pst_framebuffer::Color::WHITE);
+
+            // Esc hint
+            draw_text(vga, 60, 270, "Esc to close  Tab to switch", pst_framebuffer::Color::rgb(100, 100, 100));
+        }
+
+        let event = ps2.read_event();
+        match event {
+            InputEvent::Key(ch) => {
+                if ch == 0x1B { return; } // Esc = close
+                if ch == b'\t' {
+                    fields[focus_idx].focused = false;
+                    focus_idx = (focus_idx + 1) % fields.len();
+                    fields[focus_idx].focused = true;
+                    continue;
+                }
+                fields[focus_idx].handle_key(ch);
+            }
+            InputEvent::Click { x, y } => {
+                // Click on a field
+                for (i, f) in fields.iter().enumerate() {
+                    if f.contains(x, y) {
+                        fields[focus_idx].focused = false;
+                        focus_idx = i;
+                        fields[focus_idx].focused = true;
+                        if fields[focus_idx].input_type == crate::gui_input::InputType::Checkbox {
+                            fields[focus_idx].checked = !fields[focus_idx].checked;
+                        }
+                        break;
+                    }
+                }
+                // Click submit
+                if x >= 60 && x < 180 && y >= 224 && y < 252 {
+                    serial_print("[form] Submit: ");
+                    serial_print(&fields[0].value);
+                    serial_print("\n");
+                    return;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn draw_button_bar(fb_vaddr: u64) {
     if fb_vaddr == 0 { return; }
     use pst_framebuffer::Color;
@@ -267,12 +347,13 @@ fn draw_button_bar(fb_vaddr: u64) {
     fill(vga, 0, bar_y, w, bar_h, Color::rgb(45, 45, 45));
 
     // Buttons: x, width, label, color
-    let buttons: [(usize, usize, &str, Color); 5] = [
-        (8,   80,  "Editor",  Color::rgb(59, 130, 246)),
-        (96,  80,  "Markout", Color::rgb(16, 185, 129)),
-        (184, 80,  "Browser", Color::rgb(245, 158, 11)),
-        (272, 64,  "Code",    Color::rgb(139, 92, 246)),
-        (344, 64,  "Save",    Color::rgb(107, 114, 128)),
+    let buttons: [(usize, usize, &str, Color); 6] = [
+        (8,   72,  "Editor",  Color::rgb(59, 130, 246)),
+        (84,  80,  "Markout", Color::rgb(16, 185, 129)),
+        (168, 76,  "Browser", Color::rgb(245, 158, 11)),
+        (248, 56,  "Code",    Color::rgb(139, 92, 246)),
+        (308, 56,  "Form",    Color::rgb(236, 72, 153)),
+        (368, 56,  "Save",    Color::rgb(107, 114, 128)),
     ];
 
     for (bx, bw, label, color) in &buttons {
