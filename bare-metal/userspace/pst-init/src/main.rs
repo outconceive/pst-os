@@ -14,6 +14,7 @@ mod codeview;
 mod editor;
 mod browser;
 mod net;
+mod rng;
 
 // Custom entry point: save bootinfo (rdi from kernel) before sel4runtime runs
 #[no_mangle]
@@ -278,7 +279,7 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
                 serial_print("========================================\n\n");
 
                 if let Some(kb) = keyboard::setup(bi_ptr, next_slot) {
-                    desktop::run(&kb, store);
+                    desktop::run(&kb, store, net_dev);
                 }
             }
         } else {

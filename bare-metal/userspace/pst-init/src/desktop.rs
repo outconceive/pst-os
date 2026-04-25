@@ -60,7 +60,7 @@ const DEMO_OUTPUT: &[&str] = &[
     "PST OS ready.",
 ];
 
-pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
+pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net::VirtioNet>) {
     let mut windows = Vec::new();
 
     let restored = store.as_mut().and_then(|s| s.load_desktop());
@@ -153,7 +153,7 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
 
         // Open browser
         if ch == b'w' {
-            browser::run(kb, &mut store);
+            browser::run(kb, &mut store, &mut net);
             render_desktop(&windows, focused);
             print_prompt(&windows[focused]);
             continue;

@@ -2,9 +2,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::format;
 
-use crate::keyboard::{self, Keyboard};
+use crate::keyboard::Keyboard;
 use crate::serial_print;
 use crate::storage::Storage;
+use crate::net::VirtioNet;
+
+const PROXY_IP: [u8; 4] = [10, 0, 2, 2];
+const PROXY_PORT: u16 = 8080;
 
 const DEFAULT_INDEX: &str = "\
 @card
@@ -13,6 +17,7 @@ const DEFAULT_INDEX: &str = "\
 |
 | dt://pst/welcome    Welcome page
 | dt://pst/about      About PST OS
+| gh://outconceive/pst-os/main/README.md
 @end card";
 
 const WELCOME_PAGE: &str = "\
@@ -28,8 +33,9 @@ const WELCOME_PAGE: &str = "\
 | One primitive. One loop. One language. Every surface.
 |
 | Navigation:
-|   Enter a dt:// URL to open a page
+|   g = enter URL (dt:// or gh://)
 |   b = back   q = quit to desktop
+|   l = list files   i = index
 @end card";
 
 const ABOUT_PAGE: &str = "\
@@ -50,8 +56,7 @@ const ABOUT_PAGE: &str = "\
 | Markout all the way down.
 @end card";
 
-pub fn run(kb: &Keyboard, store: &mut Option<Storage>) -> BrowserAction {
-    // Seed default pages if storage exists and no index yet
+pub fn run(kb: &Keyboard, store: &mut Option<Storage>, net: &mut Option<VirtioNet>) -> BrowserAction {
     if let Some(ref mut s) = store {
         if s.load_file("/pst/index.md").is_none() {
             s.save_file("/pst/index.md", DEFAULT_INDEX);
@@ -62,10 +67,10 @@ pub fn run(kb: &Keyboard, store: &mut Option<Storage>) -> BrowserAction {
     }
 
     let mut history: Vec<String> = Vec::new();
-    let mut url = String::from("dt://pst/welcome");
     let mut url_input = String::new();
 
-    navigate(store, &url, &mut history);
+    let url = String::from("dt://pst/welcome");
+    navigate(store, net, &url, &mut history);
 
     loop {
         let ch = kb.read_key();
@@ -76,60 +81,48 @@ pub fn run(kb: &Keyboard, store: &mut Option<Storage>) -> BrowserAction {
             b'b' => {
                 if history.len() > 1 {
                     history.pop();
-                    if let Some(prev) = history.last() {
-                        url = prev.clone();
-                        render_page(store, &url);
+                    if let Some(prev) = history.last().cloned() {
+                        render_page(store, net, &prev);
                     }
                 }
             }
 
-            // 'g' = go to URL (enter URL mode)
             b'g' => {
                 serial_print("\r\n\x1b[7m URL: \x1b[0m ");
                 url_input.clear();
                 loop {
                     let c = kb.read_key();
-                    if c == b'\n' {
-                        serial_print("\n");
-                        break;
-                    } else if c == 0x08 {
-                        if !url_input.is_empty() {
-                            url_input.pop();
-                            serial_print("\x08 \x08");
-                        }
+                    if c == b'\n' { serial_print("\n"); break; }
+                    else if c == 0x08 {
+                        if !url_input.is_empty() { url_input.pop(); serial_print("\x08 \x08"); }
                     } else if c < 0x80 {
                         url_input.push(c as char);
                         unsafe { crate::debug_putchar(c) };
                     }
                 }
                 if !url_input.is_empty() {
-                    url = url_input.clone();
-                    navigate(store, &url, &mut history);
+                    let u = url_input.clone();
+                    navigate(store, net, &u, &mut history);
                 }
             }
 
-            // 'i' = show index
             b'i' => {
-                url = String::from("dt://pst/index.md");
-                navigate(store, &url, &mut history);
+                let u = String::from("dt://pst/index.md");
+                navigate(store, net, &u, &mut history);
             }
 
-            // 'l' = list files
             b'l' => {
                 serial_print("\x1b[2J\x1b[H");
                 serial_print("\x1b[1m  Files on disk:\x1b[0m\r\n\r\n");
                 if let Some(ref mut s) = store {
-                    let files = s.list_files();
-                    if files.is_empty() {
-                        serial_print("  (none)\r\n");
-                    }
-                    for f in &files {
+                    for f in &s.list_files() {
                         serial_print("  dt://");
                         serial_print(f);
                         serial_print("\r\n");
                     }
-                } else {
-                    serial_print("  No storage device\r\n");
+                }
+                if net.is_some() {
+                    serial_print("\r\n  \x1b[32mNetwork available\x1b[0m — gh:// URLs work\r\n");
                 }
                 serial_print("\r\n\x1b[2m  g=go  b=back  q=quit  i=index\x1b[0m\r\n");
             }
@@ -139,20 +132,12 @@ pub fn run(kb: &Keyboard, store: &mut Option<Storage>) -> BrowserAction {
     }
 }
 
-fn navigate(store: &mut Option<Storage>, url: &str, history: &mut Vec<String>) {
+fn navigate(store: &mut Option<Storage>, net: &mut Option<VirtioNet>, url: &str, history: &mut Vec<String>) {
     history.push(String::from(url));
-    render_page(store, url);
+    render_page(store, net, url);
 }
 
-fn render_page(store: &mut Option<Storage>, url: &str) {
-    let path = resolve_url(url);
-
-    let content = if let Some(ref mut s) = store {
-        s.load_file(&path)
-    } else {
-        None
-    };
-
+fn render_page(store: &mut Option<Storage>, net: &mut Option<VirtioNet>, url: &str) {
     serial_print("\x1b[2J\x1b[H");
 
     // URL bar
@@ -162,9 +147,11 @@ fn render_page(store: &mut Option<Storage>, url: &str) {
     for _ in 0..pad { serial_print(" "); }
     serial_print("\x1b[0m\r\n");
 
+    let content = fetch(store, net, url);
+
     match content {
         Some(text) => {
-            if path.ends_with(".md") {
+            if url.ends_with(".md") || url.starts_with("gh://") || url.starts_with("dt://") {
                 let rendered = pst_terminal::render(&text, 80, 22);
                 serial_print(&rendered);
             } else {
@@ -174,28 +161,30 @@ fn render_page(store: &mut Option<Storage>, url: &str) {
         }
         None => {
             serial_print("\r\n  \x1b[31mPage not found:\x1b[0m ");
-            serial_print(&path);
-            serial_print("\r\n\r\n  Available commands:\r\n");
-            serial_print("    g = go to URL\r\n");
-            serial_print("    l = list files\r\n");
-            serial_print("    i = index\r\n");
+            serial_print(url);
+            serial_print("\r\n\r\n");
+            if url.starts_with("gh://") && net.is_none() {
+                serial_print("  Network not available. Run gh-proxy.py on host.\r\n");
+            }
         }
     }
 
     serial_print("\r\n\x1b[2m  g=go  b=back  q=quit  l=list  i=index\x1b[0m\r\n");
 }
 
-fn resolve_url(url: &str) -> String {
+fn fetch(store: &mut Option<Storage>, net: &mut Option<VirtioNet>, url: &str) -> Option<String> {
     if let Some(path) = url.strip_prefix("dt://") {
-        // dt://pst/welcome → /pst/welcome.md (add .md if no extension)
         let full = format!("/{}", path);
-        if full.contains('.') {
-            full
-        } else {
-            format!("{}.md", full)
-        }
+        let full = if full.contains('.') { full } else { format!("{}.md", full) };
+        store.as_mut()?.load_file(&full)
+    } else if let Some(path) = url.strip_prefix("gh://") {
+        // gh://user/repo/branch/file → GET /user/repo/branch/file from proxy
+        let http_path = format!("/{}", path);
+        serial_print("  \x1b[33mFetching from GitHub...\x1b[0m\r\n");
+        let result = crate::net::http_get(net.as_mut()?, PROXY_IP, PROXY_PORT, &http_path);
+        result
     } else {
-        String::from(url)
+        None
     }
 }
 
