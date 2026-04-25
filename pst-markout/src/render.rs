@@ -86,6 +86,23 @@ pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VN
                 continue;
             }
 
+            if tag == "editor" {
+                let mut attrs = BTreeMap::new();
+                attrs.insert(String::from("class"), String::from("mc-editor"));
+                attrs.insert(String::from("data-editor"), String::from("true"));
+                if let Some(ref cfg) = line.config {
+                    let (features, bind_key) = parse_editor_config(cfg);
+                    if !features.is_empty() {
+                        attrs.insert(String::from("data-features"), features.join(","));
+                    }
+                    if let Some(key) = bind_key {
+                        attrs.insert(String::from("data-bind"), key);
+                    }
+                }
+                container_stack.push((String::from(tag), attrs, Vec::new()));
+                continue;
+            }
+
             let mut attrs = BTreeMap::new();
             attrs.insert(String::from("class"), format!("mc-{}", tag));
             if let Some(ref cfg) = line.config {
@@ -450,6 +467,22 @@ fn css_class(comp: char) -> String {
         parse::SPARKLINE => "mc-sparkline",
         _ => "mc-label",
     })
+}
+
+fn parse_editor_config(config: &str) -> (Vec<String>, Option<String>) {
+    let valid = ["bold", "italic", "underline", "strikethrough", "code",
+        "heading", "list", "ordered-list", "quote", "code-block",
+        "link", "image", "divider", "hr"];
+    let mut features = Vec::new();
+    let mut bind_key = None;
+    for token in config.split_whitespace() {
+        if let Some(key) = token.strip_prefix("bind:") {
+            bind_key = Some(String::from(key));
+        } else if valid.contains(&token) {
+            features.push(String::from(token));
+        }
+    }
+    (features, bind_key)
 }
 
 fn style_css_class(c: char) -> &'static str {

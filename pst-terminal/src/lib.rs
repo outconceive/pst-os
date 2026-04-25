@@ -64,6 +64,34 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
                 }
             }
 
+            if class.contains("mc-editor") {
+                let features = el.attrs.get("data-features").map(|s| s.as_str()).unwrap_or("");
+                pad_indent(out, ctx);
+                out.push_str("\x1b[7m");
+                for feat in features.split(',') {
+                    let label = match feat {
+                        "bold" => " B ",
+                        "italic" => " I ",
+                        "underline" => " U ",
+                        "code" => " <> ",
+                        "heading" => " H ",
+                        "list" => " • ",
+                        "quote" => " \" ",
+                        _ => continue,
+                    };
+                    out.push_str(label);
+                }
+                out.push_str("\x1b[0m");
+                newline(out, ctx);
+                pad_indent(out, ctx);
+                out.push_str(ansi::DIM);
+                for _ in 0..ctx.cols.saturating_sub(ctx.indent * 2) { out.push('_'); }
+                out.push_str(ansi::RESET);
+                newline(out, ctx);
+                newline(out, ctx);
+                return;
+            }
+
             if class.contains("mc-app") {
                 for child in &el.children {
                     render_node(out, child, ctx);

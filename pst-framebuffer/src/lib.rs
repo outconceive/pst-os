@@ -163,6 +163,55 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
             let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
 
             // Card — draw background + border
+            // Editor
+            if class.contains("mc-editor") {
+                let editor_x = x;
+                let editor_y = cy;
+                let editor_w = fb.width - editor_x * 2;
+
+                // Toolbar
+                let toolbar_h = 24;
+                fb.fill_rect(editor_x, editor_y, editor_w, toolbar_h, Color::rgb(55, 55, 60));
+                fb.draw_hline(editor_x, editor_y + toolbar_h - 1, editor_w, Color::rgb(70, 70, 75));
+
+                let features = el.attrs.get("data-features").map(|s| s.as_str()).unwrap_or("");
+                let mut tx = editor_x + 4;
+                for feat in features.split(',') {
+                    let label = match feat {
+                        "bold" => "B",
+                        "italic" => "I",
+                        "underline" => "U",
+                        "strikethrough" => "S",
+                        "code" => "<>",
+                        "heading" => "H",
+                        "list" => "•",
+                        "ordered-list" => "1.",
+                        "quote" => "\"",
+                        "link" => "🔗",
+                        "image" => "📷",
+                        "divider" | "hr" => "—",
+                        _ => continue,
+                    };
+                    fb.fill_rect(tx, editor_y + 3, label.len() * GLYPH_WIDTH + 8, 18, Color::rgb(70, 70, 75));
+                    fb.draw_text(tx + 4, editor_y + 7, label, Color::rgb(200, 200, 200), Color::rgb(70, 70, 75));
+                    tx += label.len() * GLYPH_WIDTH + 12;
+                }
+
+                // Editable area
+                let area_h = 80;
+                fb.fill_rect(editor_x, editor_y + toolbar_h, editor_w, area_h, Color::rgb(45, 45, 50));
+                fb.draw_hline(editor_x, editor_y + toolbar_h + area_h, editor_w, Color::rgb(70, 70, 75));
+
+                // Border
+                for dy in 0..toolbar_h + area_h {
+                    fb.set_pixel(editor_x, editor_y + dy, Color::rgb(70, 70, 75));
+                    fb.set_pixel(editor_x + editor_w - 1, editor_y + dy, Color::rgb(70, 70, 75));
+                }
+                fb.draw_hline(editor_x, editor_y, editor_w, Color::rgb(70, 70, 75));
+
+                return editor_y + toolbar_h + area_h + 8;
+            }
+
             if class.contains("mc-card") || class.contains("mc-nav") || class.contains("mc-header")
                 || class.contains("mc-footer") || class.contains("mc-section") || class.contains("mc-form")
                 || class.contains("mc-aside") {

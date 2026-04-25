@@ -551,6 +551,21 @@ mod tests {
     }
 
     #[test]
+    fn test_editor_parse() {
+        let lines = parse("@editor bold italic code bind:notes\n| content\n@end editor");
+        assert_eq!(lines[0].line_type, LineType::ContainerStart);
+        assert_eq!(lines[0].tag, Some(String::from("editor")));
+        assert_eq!(lines[0].config, Some(String::from("bold italic code bind:notes")));
+        use crate::render;
+        let vdom = render::render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("mc-editor"));
+        assert!(html.contains("data-editor"));
+        assert!(html.contains("data-features"));
+        assert!(html.contains("data-bind"));
+    }
+
+    #[test]
     fn test_each_parse() {
         let lines = parse("@each:items\n| {label:name}\n@end each");
         assert_eq!(lines.len(), 3);
