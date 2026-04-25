@@ -295,6 +295,35 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
 }
 
 fn col_width(el: &VElement, container_w: usize) -> Option<usize> {
+    // Check responsive breakpoints first
+    if let Some(resp_str) = el.attrs.get("data-responsive") {
+        let bp = if container_w < 640 { "sm" }
+            else if container_w < 1024 { "md" }
+            else if container_w < 1280 { "lg" }
+            else { "xl" };
+
+        // Find the best matching breakpoint (largest that fits)
+        let breakpoints = ["sm", "md", "lg", "xl"];
+        let bp_idx = breakpoints.iter().position(|&b| b == bp).unwrap_or(0);
+
+        for check_idx in (0..=bp_idx).rev() {
+            let check_bp = breakpoints[check_idx];
+            for entry in resp_str.split(';') {
+                if let Some(rest) = entry.strip_prefix(check_bp) {
+                    if let Some(col_part) = rest.strip_prefix(':') {
+                        let parts: Vec<&str> = col_part.split(',').collect();
+                        if parts.len() == 2 {
+                            if let (Ok(span), Ok(total)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
+                                if total > 0 { return Some((container_w * span) / total); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fall back to static col
     if let Some(col_str) = el.attrs.get("data-col") {
         let parts: Vec<&str> = col_str.split(',').collect();
         if parts.len() == 2 {

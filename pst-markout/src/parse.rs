@@ -33,6 +33,7 @@ pub struct Line {
     pub config: Option<String>,
     pub constraints: BTreeMap<usize, Vec<String>>,
     pub cols: BTreeMap<usize, (u8, u8)>,
+    pub responsive: BTreeMap<usize, Vec<(String, u8, u8)>>, // pos → [(breakpoint, span, total)]
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +57,7 @@ impl Line {
             config: None,
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
+            responsive: BTreeMap::new(),
         }
     }
 
@@ -68,6 +70,7 @@ impl Line {
             config: config.map(String::from),
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
+            responsive: BTreeMap::new(),
         }
     }
 
@@ -80,6 +83,7 @@ impl Line {
             config: None,
             constraints: BTreeMap::new(),
             cols: BTreeMap::new(),
+            responsive: BTreeMap::new(),
         }
     }
 }
@@ -131,6 +135,7 @@ fn parse_content_line(input: &str) -> Line {
     let mut styles = String::new();
     let mut constraints: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     let mut cols: BTreeMap<usize, (u8, u8)> = BTreeMap::new();
+    let mut responsive_map: BTreeMap<usize, Vec<(String, u8, u8)>> = BTreeMap::new();
 
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
@@ -178,6 +183,9 @@ fn parse_content_line(input: &str) -> Line {
                 if let Some(c) = comp.col {
                     cols.insert(pos, c);
                 }
+                if !comp.responsive.is_empty() {
+                    responsive_map.insert(pos, comp.responsive);
+                }
 
                 i = end;
                 continue;
@@ -195,6 +203,7 @@ fn parse_content_line(input: &str) -> Line {
     let mut line = Line::content_row(&content, &components, &state_keys, &styles);
     line.constraints = constraints;
     line.cols = cols;
+    line.responsive = responsive_map;
     line
 }
 
@@ -205,7 +214,8 @@ struct ParsedComponent {
     style: Option<String>,
     width: usize,
     constraints: Vec<String>,
-    col: Option<(u8, u8)>, // (span, total) e.g. col-6 = (6,12)
+    col: Option<(u8, u8)>,
+    responsive: Vec<(String, u8, u8)>,
 }
 
 fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usize)> {
@@ -255,12 +265,17 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
     let mut style = None;
     let mut comp_constraints = Vec::new();
     let mut col = None;
+    let mut responsive = Vec::new();
 
     for part in &parts[1..] {
         if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
             label = part[1..part.len() - 1].to_string();
         } else if part.starts_with("col-") {
             col = parse_col(part);
+        } else if part.starts_with("sm:") || part.starts_with("md:") || part.starts_with("lg:") || part.starts_with("xl:") {
+            if let Some(r) = parse_responsive_col(part) {
+                responsive.push(r);
+            }
         } else if is_constraint_token(part) {
             comp_constraints.push(part.clone());
         } else if is_style(part) {
@@ -293,7 +308,16 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
         width: default_width,
         constraints: comp_constraints,
         col,
+        responsive,
     }, end))
+}
+
+fn parse_responsive_col(part: &str) -> Option<(String, u8, u8)> {
+    let colon = part.find(':')?;
+    let breakpoint = String::from(&part[..colon]);
+    let col_part = &part[colon + 1..];
+    let (n, total) = parse_col(col_part)?;
+    Some((breakpoint, n, total))
 }
 
 fn parse_col(s: &str) -> Option<(u8, u8)> {
@@ -459,6 +483,29 @@ mod tests {
         let lines = parse("| {input:name col-3[5]}");
         let cols: Vec<&(u8, u8)> = lines[0].cols.values().collect();
         assert_eq!(cols[0], &(3, 5));
+    }
+
+    #[test]
+    fn test_responsive_col() {
+        let lines = parse("| {input:name sm:col-12 md:col-6 lg:col-4}");
+        let resp = &lines[0].responsive;
+        assert!(!resp.is_empty());
+        let vals: Vec<&Vec<(String, u8, u8)>> = resp.values().collect();
+        let flat = &vals[0];
+        assert!(flat.iter().any(|(bp, n, _)| bp == "sm" && *n == 12));
+        assert!(flat.iter().any(|(bp, n, _)| bp == "md" && *n == 6));
+        assert!(flat.iter().any(|(bp, n, _)| bp == "lg" && *n == 4));
+    }
+
+    #[test]
+    fn test_responsive_flows_to_vnode() {
+        use crate::render;
+        let lines = parse("| {input:name sm:col-12 lg:col-6}");
+        let vdom = render::render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("data-responsive"));
+        assert!(html.contains("sm:12,12"));
+        assert!(html.contains("lg:6,12"));
     }
 
     #[test]

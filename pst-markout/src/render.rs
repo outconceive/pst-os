@@ -112,6 +112,12 @@ fn render_line(line: &Line) -> VNode {
             if let Some(&(span, total)) = line.cols.get(&start) {
                 attrs.insert(String::from("data-col"), format!("{},{}", span, total));
             }
+            if let Some(resp) = line.responsive.get(&start) {
+                let val: String = resp.iter()
+                    .map(|(bp, n, t)| format!("{}:{},{}", bp, n, t))
+                    .collect::<Vec<_>>().join(";");
+                attrs.insert(String::from("data-responsive"), val);
+            }
 
             match comp {
                 parse::TEXT_INPUT | parse::PASSWORD => {
