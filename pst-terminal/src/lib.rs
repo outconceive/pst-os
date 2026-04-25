@@ -95,6 +95,11 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
                 return;
             }
 
+            if class.contains("mc-checkbox") {
+                render_checkbox(out, el, ctx);
+                return;
+            }
+
             if class.contains("mc-divider") {
                 pad_indent(out, ctx);
                 let w = ctx.cols.saturating_sub(ctx.indent * 2);
@@ -152,15 +157,26 @@ fn render_card(out: &mut String, el: &VElement, ctx: &mut RenderCtx) {
     newline(out, ctx);
 }
 
-fn render_button(out: &mut String, _el: &VElement, ctx: &mut RenderCtx) {
-    let label = text_content(&VNode::Element(_el.clone()));
-    out.push_str(&ansi::bg(59, 130, 246));
-    out.push_str(&ansi::fg(255, 255, 255));
-    out.push_str(ansi::BOLD);
-    out.push_str(" ");
-    out.push_str(label.trim());
-    out.push_str(" ");
-    out.push_str(ansi::RESET);
+fn render_button(out: &mut String, el: &VElement, ctx: &mut RenderCtx) {
+    let label = text_content(&VNode::Element(el.clone()));
+    let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
+    let style = ansi::theme_style(class);
+    if !style.is_empty() {
+        out.push_str(style);
+        out.push_str(ansi::BOLD);
+        out.push_str(" ");
+        out.push_str(label.trim());
+        out.push_str(" ");
+        out.push_str(ansi::RESET);
+    } else {
+        out.push_str(&ansi::bg(59, 130, 246));
+        out.push_str(&ansi::fg(255, 255, 255));
+        out.push_str(ansi::BOLD);
+        out.push_str(" ");
+        out.push_str(label.trim());
+        out.push_str(" ");
+        out.push_str(ansi::RESET);
+    }
     ctx.col += label.trim().len() + 2;
 }
 
@@ -171,6 +187,11 @@ fn render_input(out: &mut String, _el: &VElement, ctx: &mut RenderCtx) {
     out.push(']');
     out.push_str(ansi::RESET);
     ctx.col += 20;
+}
+
+fn render_checkbox(out: &mut String, _el: &VElement, ctx: &mut RenderCtx) {
+    out.push_str("[ ] ");
+    ctx.col += 4;
 }
 
 fn text_content(node: &VNode) -> String {

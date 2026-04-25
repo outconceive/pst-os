@@ -13,6 +13,7 @@ mod storage;
 mod codeview;
 mod editor;
 mod browser;
+mod convergence;
 mod net;
 mod rng;
 

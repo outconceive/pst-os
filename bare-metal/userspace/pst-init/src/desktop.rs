@@ -8,6 +8,7 @@ use crate::storage::Storage;
 use crate::codeview::CodeView;
 use crate::editor::{Editor, EditorAction};
 use crate::browser;
+use crate::convergence;
 
 struct Window {
     title: String,
@@ -148,6 +149,14 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
             let mut ed = Editor::new("untitled.md");
             serial_print(&ed.render());
             editor = Some(ed);
+            continue;
+        }
+
+        // Convergence proof
+        if ch == b'7' {
+            convergence::run(kb);
+            render_desktop(&windows, focused);
+            print_prompt(&windows[focused]);
             continue;
         }
 
