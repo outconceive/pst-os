@@ -280,6 +280,21 @@ impl Ps2 {
         let ny = self.mouse_y as usize;
         xor_cursor(self.fb_vaddr, nx, ny);
 
+        // Color the iris when hovering over a button
+        if ny >= 448 {
+            let iris_color = match nx {
+                8..=87   => Some((59, 130, 246)),   // blue - Editor
+                96..=175  => Some((16, 185, 129)),  // green - Markout
+                184..=263 => Some((245, 158, 11)),  // amber - Browser
+                272..=335 => Some((139, 92, 246)),  // purple - Code
+                344..=407 => Some((107, 114, 128)), // gray - Save
+                _ => None,
+            };
+            if let Some((r, g, b)) = iris_color {
+                draw_iris(self.fb_vaddr, nx, ny, r, g, b);
+            }
+        }
+
         self.trail[self.trail_len] = (nx as i32, ny as i32);
         self.trail_len += 1;
     }
@@ -333,6 +348,26 @@ fn erase_smoke(fb_vaddr: u64, cx: usize, cy: usize) {
                         *vga.add(off + 1) = BG_G;
                         *vga.add(off + 2) = BG_R;
                     }
+                }
+            }
+        }
+    }
+}
+
+fn draw_iris(fb_vaddr: u64, cx: usize, cy: usize, r: u8, g: u8, b: u8) {
+    let vga = fb_vaddr as *mut u8;
+    for dy in 0..CURSOR_SIZE {
+        let shape = CURSOR_SHAPE[dy];
+        for dx in 0..CURSOR_SIZE {
+            if (shape & (0x8000 >> dx)) == 0 { continue; }
+            let sx = cx + dx;
+            let sy = cy + dy;
+            if sx < SCREEN_W as usize && sy < SCREEN_H as usize {
+                let off = (sy * SCREEN_W as usize + sx) * 4;
+                unsafe {
+                    *vga.add(off) = b;
+                    *vga.add(off + 1) = g;
+                    *vga.add(off + 2) = r;
                 }
             }
         }
