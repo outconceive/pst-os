@@ -175,6 +175,12 @@ fn render_line(line: &Line) -> VNode {
             if let Some(&(span, total)) = line.cols.get(&start) {
                 attrs.insert(String::from("data-col"), format!("{},{}", span, total));
             }
+            if let Some(h) = line.hrefs.get(&start) {
+                attrs.insert(String::from("data-href"), h.clone());
+            }
+            if let Some(p) = line.popovers.get(&start) {
+                attrs.insert(String::from("data-popover"), p.clone());
+            }
             if let Some(a) = line.animates.get(&start) {
                 attrs.insert(String::from("data-animate"), a.clone());
             }

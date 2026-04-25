@@ -36,6 +36,8 @@ pub struct Line {
     pub responsive: BTreeMap<usize, Vec<(String, u8, u8)>>,
     pub validates: BTreeMap<usize, String>,
     pub animates: BTreeMap<usize, String>,
+    pub hrefs: BTreeMap<usize, String>,
+    pub popovers: BTreeMap<usize, String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +64,8 @@ impl Line {
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
             animates: BTreeMap::new(),
+            hrefs: BTreeMap::new(),
+            popovers: BTreeMap::new(),
         }
     }
 
@@ -77,6 +81,8 @@ impl Line {
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
             animates: BTreeMap::new(),
+            hrefs: BTreeMap::new(),
+            popovers: BTreeMap::new(),
         }
     }
 
@@ -92,6 +98,8 @@ impl Line {
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
             animates: BTreeMap::new(),
+            hrefs: BTreeMap::new(),
+            popovers: BTreeMap::new(),
         }
     }
 
@@ -106,6 +114,8 @@ impl Line {
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
             animates: BTreeMap::new(),
+            hrefs: BTreeMap::new(),
+            popovers: BTreeMap::new(),
         }
     }
 
@@ -124,6 +134,8 @@ impl Line {
             responsive: BTreeMap::new(),
             validates: BTreeMap::new(),
             animates: BTreeMap::new(),
+            hrefs: BTreeMap::new(),
+            popovers: BTreeMap::new(),
         }
     }
 }
@@ -192,6 +204,8 @@ fn parse_content_line(input: &str) -> Line {
     let mut responsive_map: BTreeMap<usize, Vec<(String, u8, u8)>> = BTreeMap::new();
     let mut validates_map: BTreeMap<usize, String> = BTreeMap::new();
     let mut animates_map: BTreeMap<usize, String> = BTreeMap::new();
+    let mut hrefs_map: BTreeMap<usize, String> = BTreeMap::new();
+    let mut popovers_map: BTreeMap<usize, String> = BTreeMap::new();
 
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
@@ -248,6 +262,12 @@ fn parse_content_line(input: &str) -> Line {
                 if let Some(a) = comp.animate {
                     animates_map.insert(pos, a);
                 }
+                if let Some(h) = comp.href {
+                    hrefs_map.insert(pos, h);
+                }
+                if let Some(p) = comp.popover {
+                    popovers_map.insert(pos, p);
+                }
 
                 i = end;
                 continue;
@@ -268,6 +288,8 @@ fn parse_content_line(input: &str) -> Line {
     line.responsive = responsive_map;
     line.validates = validates_map;
     line.animates = animates_map;
+    line.hrefs = hrefs_map;
+    line.popovers = popovers_map;
     line
 }
 
@@ -282,6 +304,8 @@ struct ParsedComponent {
     responsive: Vec<(String, u8, u8)>,
     validate: Option<String>,
     animate: Option<String>,
+    href: Option<String>,
+    popover: Option<String>,
 }
 
 fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usize)> {
@@ -334,10 +358,20 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
     let mut responsive = Vec::new();
     let mut validate = None;
     let mut animate = None;
+    let mut href = None;
+    let mut popover = None;
 
     for part in &parts[1..] {
         if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
             label = part[1..part.len() - 1].to_string();
+        } else if part.starts_with("href:") || part.starts_with("href=") {
+            href = Some(String::from(&part[5..]));
+        } else if part.starts_with("route:") {
+            href = Some(format!("route:{}", &part[6..]));
+        } else if part.starts_with("fetch:") {
+            href = Some(format!("fetch:{}", &part[6..]));
+        } else if part.starts_with("popover:") {
+            popover = Some(part[8..].trim_matches('"').to_string());
         } else if part.starts_with("animate:") {
             animate = Some(String::from(&part[8..]));
         } else if part.starts_with("validate:") {
@@ -383,6 +417,8 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
         responsive,
         validate,
         animate,
+        href,
+        popover,
     }, end))
 }
 
@@ -580,6 +616,45 @@ mod tests {
         assert!(html.contains("data-responsive"));
         assert!(html.contains("sm:12,12"));
         assert!(html.contains("lg:6,12"));
+    }
+
+    #[test]
+    fn test_href_parse() {
+        let lines = parse("| {link:docs \"Docs\" href:/pst/docs}");
+        let hrefs: Vec<&String> = lines[0].hrefs.values().collect();
+        assert_eq!(hrefs.len(), 1);
+        assert_eq!(hrefs[0], "/pst/docs");
+    }
+
+    #[test]
+    fn test_route_parse() {
+        let lines = parse("| {button:go \"Go\" route:home}");
+        let hrefs: Vec<&String> = lines[0].hrefs.values().collect();
+        assert_eq!(hrefs[0], "route:home");
+    }
+
+    #[test]
+    fn test_fetch_parse() {
+        let lines = parse("| {label:data fetch:/api/data}");
+        let hrefs: Vec<&String> = lines[0].hrefs.values().collect();
+        assert_eq!(hrefs[0], "fetch:/api/data");
+    }
+
+    #[test]
+    fn test_popover_parse() {
+        let lines = parse(r#"| {button:help "?" popover:"Click for help"}"#);
+        let pops: Vec<&String> = lines[0].popovers.values().collect();
+        assert_eq!(pops[0], "Click for help");
+    }
+
+    #[test]
+    fn test_event_props_flow_to_vnode() {
+        use crate::render;
+        let lines = parse(r#"| {link:docs "Docs" href:/pst/docs popover:"Documentation"}"#);
+        let vdom = render::render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("data-href=\"/pst/docs\""));
+        assert!(html.contains("data-popover=\"Documentation\""));
     }
 
     #[test]
