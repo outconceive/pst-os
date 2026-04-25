@@ -266,12 +266,19 @@ impl Ps2 {
             self.trail_len = 3;
         }
 
-        // XOR-erase old head
+        // XOR-erase old head (including iris if it was hovering)
         if self.trail_len > 0 {
             let i = self.trail_len - 1;
             let (ox, oy) = self.trail[i];
-            if ox >= 0 { xor_cursor(self.fb_vaddr, ox as usize, oy as usize); }
-            // Stamp smoke at old head
+            if ox >= 0 {
+                let ou = oy as usize;
+                let ox_u = ox as usize;
+                if ou >= 448 && ((ox_u >= 8 && ox_u < 88) || (ox_u >= 96 && ox_u < 176) ||
+                   (ox_u >= 184 && ox_u < 264) || (ox_u >= 272 && ox_u < 336) || (ox_u >= 344 && ox_u < 408)) {
+                    xor_iris(self.fb_vaddr, ox_u, ou);
+                }
+                xor_cursor(self.fb_vaddr, ox_u, ou);
+            }
             if ox >= 0 { stamp_smoke(self.fb_vaddr, ox as usize, oy as usize); }
         }
 
@@ -280,19 +287,10 @@ impl Ps2 {
         let ny = self.mouse_y as usize;
         xor_cursor(self.fb_vaddr, nx, ny);
 
-        // Color the iris when hovering over a button
-        if ny >= 448 {
-            let iris_color = match nx {
-                8..=87   => Some((59, 130, 246)),   // blue - Editor
-                96..=175  => Some((16, 185, 129)),  // green - Markout
-                184..=263 => Some((245, 158, 11)),  // amber - Browser
-                272..=335 => Some((139, 92, 246)),  // purple - Code
-                344..=407 => Some((107, 114, 128)), // gray - Save
-                _ => None,
-            };
-            if let Some((r, g, b)) = iris_color {
-                draw_iris(self.fb_vaddr, nx, ny, r, g, b);
-            }
+        // XOR the iris when hovering over a button (double-inverts the center)
+        if ny >= 448 && ((nx >= 8 && nx < 88) || (nx >= 96 && nx < 176) ||
+           (nx >= 184 && nx < 264) || (nx >= 272 && nx < 336) || (nx >= 344 && nx < 408)) {
+            xor_iris(self.fb_vaddr, nx, ny);
         }
 
         self.trail[self.trail_len] = (nx as i32, ny as i32);
@@ -354,7 +352,7 @@ fn erase_smoke(fb_vaddr: u64, cx: usize, cy: usize) {
     }
 }
 
-fn draw_iris(fb_vaddr: u64, cx: usize, cy: usize, r: u8, g: u8, b: u8) {
+fn xor_iris(fb_vaddr: u64, cx: usize, cy: usize) {
     let vga = fb_vaddr as *mut u8;
     for dy in 0..CURSOR_SIZE {
         let shape = CURSOR_SHAPE[dy];
@@ -365,9 +363,9 @@ fn draw_iris(fb_vaddr: u64, cx: usize, cy: usize, r: u8, g: u8, b: u8) {
             if sx < SCREEN_W as usize && sy < SCREEN_H as usize {
                 let off = (sy * SCREEN_W as usize + sx) * 4;
                 unsafe {
-                    *vga.add(off) = b;
-                    *vga.add(off + 1) = g;
-                    *vga.add(off + 2) = r;
+                    *vga.add(off) ^= 0xFF;
+                    *vga.add(off + 1) ^= 0xFF;
+                    *vga.add(off + 2) ^= 0xFF;
                 }
             }
         }
