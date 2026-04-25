@@ -78,7 +78,6 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
         windows.push(Window::new("Terminal"));
         windows.push(Window::new("Scratch"));
         windows[0].doc.push(String::from("| Welcome to PST OS"));
-        windows[0].doc.push(String::from("| Tab=switch  F1=edit  F2=md  F3=web  F4=code"));
     }
 
     let mut focused: usize = 0;
@@ -94,17 +93,45 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
         let ch = match event {
             InputEvent::Key(k) => k,
             InputEvent::Click { x, y } => {
-                // Click on a window — focus it based on y position
                 let row = y / pst_framebuffer::font::GLYPH_HEIGHT;
-                // Status bar is rows 0-3, then each window ~5 rows
-                // Simple: just re-render on click for now
-                serial_print("[click] ");
-                crate::serial_print_num(x);
-                serial_print(",");
-                crate::serial_print_num(y);
-                serial_print("\n");
-                render_desktop(&windows, focused, fb_vaddr);
-                print_prompt(&windows[focused]);
+                let col = x / pst_framebuffer::font::GLYPH_WIDTH;
+
+                // Button bar at row 28 (0-indexed)
+                if row >= 28 {
+                    // [Editor]  [Markout]  [Browser]  [Code]  [Save]
+                    // cols: 1-9, 11-20, 22-31, 33-39, 41-47
+                    if col <= 9 {
+                        let ed = Editor::new("untitled.txt");
+                        serial_print(&ed.render());
+                        editor = Some(ed);
+                    } else if col <= 20 {
+                        let ed = Editor::new("untitled.md");
+                        serial_print(&ed.render());
+                        editor = Some(ed);
+                    } else if col <= 31 {
+                        browser::run_with_ps2(ps2, &mut store, &mut net);
+                        render_desktop(&windows, focused, fb_vaddr);
+                        print_prompt(&windows[focused]);
+                    } else if col <= 39 {
+                        let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
+                        serial_print(&cv.render());
+                        codeview = Some(cv);
+                    } else {
+                        if let Some(ref mut s) = store {
+                            let snapshot: Vec<(String, Vec<String>)> = windows.iter()
+                                .map(|w| (w.title.clone(), w.doc.clone())).collect();
+                            s.save_desktop(&snapshot);
+                        }
+                    }
+                    continue;
+                }
+
+                // Click on status bar (row 0-2) — switch window
+                if row <= 2 {
+                    focused = (focused + 1) % windows.len();
+                    render_desktop(&windows, focused, fb_vaddr);
+                    print_prompt(&windows[focused]);
+                }
                 continue;
             }
             InputEvent::MouseMove { .. } => continue,
@@ -224,6 +251,14 @@ fn render_desktop(windows: &[Window], focused: usize, _fb_vaddr: u64) {
     let output = pst_terminal::render(&doc, 80, 24);
     serial_print("\x1b[2J\x1b[H");
     serial_print(&output);
+
+    // Button bar at bottom
+    serial_print("\x1b[29;1H");
+    serial_print("\x1b[7m [Editor] \x1b[0m ");
+    serial_print("\x1b[7m [Markout] \x1b[0m ");
+    serial_print("\x1b[7m [Browser] \x1b[0m ");
+    serial_print("\x1b[7m [Code] \x1b[0m ");
+    serial_print("\x1b[7m [Save] \x1b[0m");
 }
 
 fn print_prompt(win: &Window) {

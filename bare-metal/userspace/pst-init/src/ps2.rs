@@ -285,9 +285,9 @@ impl Ps2 {
     }
 }
 
-const SMOKE_R: u8 = 5;
-const SMOKE_G: u8 = 5;
-const SMOKE_B: u8 = 5;
+const SMOKE_R: u8 = 10;
+const SMOKE_G: u8 = 10;
+const SMOKE_B: u8 = 10;
 const BG_R: u8 = 30;
 const BG_G: u8 = 30;
 const BG_B: u8 = 30;
@@ -303,9 +303,14 @@ fn stamp_smoke(fb_vaddr: u64, cx: usize, cy: usize) {
             if sx < SCREEN_W as usize && sy < SCREEN_H as usize {
                 let off = (sy * SCREEN_W as usize + sx) * 4;
                 unsafe {
-                    *vga.add(off) = SMOKE_B;
-                    *vga.add(off + 1) = SMOKE_G;
-                    *vga.add(off + 2) = SMOKE_R;
+                    let b = *vga.add(off);
+                    let g = *vga.add(off + 1);
+                    let r = *vga.add(off + 2);
+                    if r == BG_R && g == BG_G && b == BG_B {
+                        *vga.add(off) = SMOKE_B;
+                        *vga.add(off + 1) = SMOKE_G;
+                        *vga.add(off + 2) = SMOKE_R;
+                    }
                 }
             }
         }
