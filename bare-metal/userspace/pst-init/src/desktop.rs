@@ -7,6 +7,7 @@ use crate::serial_print;
 use crate::storage::Storage;
 use crate::codeview::CodeView;
 use crate::editor::{Editor, EditorAction};
+use crate::browser;
 
 struct Window {
     title: String,
@@ -76,7 +77,7 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
         windows.push(Window::new("Terminal"));
         windows.push(Window::new("Scratch"));
         windows[0].doc.push(String::from("| Welcome to PST OS"));
-        windows[0].doc.push(String::from("| Tab=switch  Esc=save  c=code  e=edit  m=markout"));
+        windows[0].doc.push(String::from("| Tab=switch  Esc=save  c=code  e=edit  m=md  w=web"));
     }
 
     let mut focused: usize = 0;
@@ -147,6 +148,14 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>) {
             let mut ed = Editor::new("untitled.md");
             serial_print(&ed.render());
             editor = Some(ed);
+            continue;
+        }
+
+        // Open browser
+        if ch == b'w' {
+            browser::run(kb, &mut store);
+            render_desktop(&windows, focused);
+            print_prompt(&windows[focused]);
             continue;
         }
 

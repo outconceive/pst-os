@@ -270,6 +270,143 @@ impl Storage {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Flat filesystem: files stored by name on blocks 32+
+// Block 32: directory (magic PSTF, count, then entries)
+// Each entry: 1-byte name_len, 59-byte name, 2-byte start_block, 2-byte size
+// Blocks 64+: file content
+// ---------------------------------------------------------------------------
+
+const FS_MAGIC: [u8; 4] = *b"PSTF";
+const DIR_BLOCK: u64 = 32;
+const DIR_ENTRIES_START: u64 = 33;
+const CONTENT_START: u64 = 64;
+const MAX_FILES: usize = 16;
+const ENTRY_SIZE: usize = 64;
+
+impl Storage {
+    pub fn save_file(&mut self, path: &str, content: &str) -> bool {
+        let mut dir = self.read_directory();
+
+        // Find existing or allocate new slot
+        let slot = dir.iter().position(|e| e.name == path);
+        let content_block = if let Some(i) = slot {
+            dir[i].start_block
+        } else {
+            if dir.len() >= MAX_FILES { return false; }
+            let next = if dir.is_empty() { CONTENT_START }
+                else { dir.iter().map(|e| e.start_block + blocks_needed(e.size)).max().unwrap_or(CONTENT_START) };
+            next
+        };
+
+        let bytes = content.as_bytes();
+        let needed = blocks_needed(bytes.len());
+
+        // Write content
+        let mut block = [0u8; BLOCK_SIZE];
+        let mut offset = 0usize;
+        for b in 0..needed {
+            block = [0u8; BLOCK_SIZE];
+            let chunk = (bytes.len() - offset).min(BLOCK_SIZE);
+            block[..chunk].copy_from_slice(&bytes[offset..offset + chunk]);
+            if !self.write_block(content_block + b, &block) { return false; }
+            offset += chunk;
+        }
+
+        // Update directory
+        if let Some(i) = slot {
+            dir[i].size = bytes.len();
+        } else {
+            dir.push(FileEntry {
+                name: String::from(path),
+                start_block: content_block,
+                size: bytes.len(),
+            });
+        }
+        self.write_directory(&dir)
+    }
+
+    pub fn load_file(&mut self, path: &str) -> Option<String> {
+        let dir = self.read_directory();
+        let entry = dir.iter().find(|e| e.name == path)?;
+
+        let mut content = Vec::new();
+        let mut block = [0u8; BLOCK_SIZE];
+        let needed = blocks_needed(entry.size);
+        let mut remaining = entry.size;
+
+        for b in 0..needed {
+            if !self.read_block(entry.start_block + b, &mut block) { return None; }
+            let chunk = remaining.min(BLOCK_SIZE);
+            content.extend_from_slice(&block[..chunk]);
+            remaining -= chunk;
+        }
+
+        core::str::from_utf8(&content).ok().map(String::from)
+    }
+
+    pub fn list_files(&mut self) -> Vec<String> {
+        self.read_directory().into_iter().map(|e| e.name).collect()
+    }
+
+    fn read_directory(&mut self) -> Vec<FileEntry> {
+        let mut block = [0u8; BLOCK_SIZE];
+        if !self.read_block(DIR_BLOCK, &mut block) { return Vec::new(); }
+        if block[0..4] != FS_MAGIC { return Vec::new(); }
+
+        let count = block[4] as usize;
+        let mut entries = Vec::new();
+
+        for i in 0..count.min(MAX_FILES) {
+            if !self.read_block(DIR_ENTRIES_START + i as u64, &mut block) { break; }
+            let nlen = block[0] as usize;
+            if nlen == 0 || nlen > 59 { continue; }
+            let name = core::str::from_utf8(&block[1..1 + nlen]).unwrap_or("");
+            let start = u16::from_le_bytes([block[60], block[61]]) as u64;
+            let size = u16::from_le_bytes([block[62], block[63]]) as usize;
+            entries.push(FileEntry {
+                name: String::from(name),
+                start_block: start,
+                size,
+            });
+        }
+        entries
+    }
+
+    fn write_directory(&mut self, entries: &[FileEntry]) -> bool {
+        let mut block = [0u8; BLOCK_SIZE];
+        block[0..4].copy_from_slice(&FS_MAGIC);
+        block[4] = entries.len() as u8;
+        if !self.write_block(DIR_BLOCK, &block) { return false; }
+
+        for (i, entry) in entries.iter().enumerate() {
+            block = [0u8; BLOCK_SIZE];
+            let nb = entry.name.as_bytes();
+            let nlen = nb.len().min(59);
+            block[0] = nlen as u8;
+            block[1..1 + nlen].copy_from_slice(&nb[..nlen]);
+            let start_bytes = (entry.start_block as u16).to_le_bytes();
+            block[60] = start_bytes[0];
+            block[61] = start_bytes[1];
+            let size_bytes = (entry.size as u16).to_le_bytes();
+            block[62] = size_bytes[0];
+            block[63] = size_bytes[1];
+            if !self.write_block(DIR_ENTRIES_START + i as u64, &block) { return false; }
+        }
+        true
+    }
+}
+
+struct FileEntry {
+    name: String,
+    start_block: u64,
+    size: usize,
+}
+
+fn blocks_needed(size: usize) -> u64 {
+    ((size + BLOCK_SIZE - 1) / BLOCK_SIZE).max(1) as u64
+}
+
 // I/O port helpers using native seL4 syscalls
 fn port_in8(cap: u64, port: u16) -> u8 { unsafe { native::sel4_ioport_in8(cap, port) } }
 fn port_in16(cap: u64, port: u16) -> u16 { unsafe { native::sel4_ioport_in16(cap, port) } }
