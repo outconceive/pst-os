@@ -165,18 +165,22 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                         let ed = Editor::new("untitled.txt");
                         serial_print(&ed.render());
                         editor = Some(ed);
+                        ps2.invalidate_cursor();
                     } else if x >= 84 && x < 164 {
                         let ed = Editor::new("untitled.md");
                         serial_print(&ed.render());
                         editor = Some(ed);
+                        ps2.invalidate_cursor();
                     } else if x >= 168 && x < 244 {
                         browser::run_with_ps2(ps2, &mut store, &mut net);
                         render_desktop(&windows, focused, fb_vaddr);
+                        ps2.invalidate_cursor();
                         print_prompt(&windows[focused]);
                     } else if x >= 248 && x < 304 {
                         let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
                         serial_print(&cv.render());
                         codeview = Some(cv);
+                        ps2.invalidate_cursor();
                     } else if x >= 308 && x < 364 {
                         // Form
                         run_form(ps2, fb_vaddr);
@@ -196,6 +200,7 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                 if row <= 2 {
                     focused = (focused + 1) % windows.len();
                     render_desktop(&windows, focused, fb_vaddr);
+                    ps2.invalidate_cursor();
                     print_prompt(&windows[focused]);
                 }
                 continue;
@@ -212,11 +217,13 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                     serial_print("[editor] Saved "); serial_print(&ed.filename); serial_print("\n");
                     editor = None;
                     render_desktop(&windows, focused, fb_vaddr);
+                    ps2.invalidate_cursor();
                     print_prompt(&windows[focused]);
                 }
                 EditorAction::Quit => {
                     editor = None;
                     render_desktop(&windows, focused, fb_vaddr);
+                    ps2.invalidate_cursor();
                     print_prompt(&windows[focused]);
                 }
             }
@@ -240,12 +247,12 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
 
         // F1=editor  F2=markout  F3=browser  F4=code  F5=convergence  F6=form
         match ch {
-            ps2::KEY_F1 => { let ed = Editor::new("untitled.txt"); serial_print(&ed.render()); editor = Some(ed); continue; }
-            ps2::KEY_F2 => { let ed = Editor::new("untitled.md"); serial_print(&ed.render()); editor = Some(ed); continue; }
-            ps2::KEY_F3 => { browser::run_with_ps2(ps2, &mut store, &mut net); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
-            ps2::KEY_F4 => { let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT); serial_print(&cv.render()); codeview = Some(cv); continue; }
-            ps2::KEY_F5 => { convergence::run_with_ps2(ps2); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
-            ps2::KEY_F6 => { run_form(ps2, fb_vaddr); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
+            ps2::KEY_F1 => { let ed = Editor::new("untitled.txt"); serial_print(&ed.render()); editor = Some(ed); ps2.invalidate_cursor(); continue; }
+            ps2::KEY_F2 => { let ed = Editor::new("untitled.md"); serial_print(&ed.render()); editor = Some(ed); ps2.invalidate_cursor(); continue; }
+            ps2::KEY_F3 => { browser::run_with_ps2(ps2, &mut store, &mut net); render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue; }
+            ps2::KEY_F4 => { let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT); serial_print(&cv.render()); codeview = Some(cv); ps2.invalidate_cursor(); continue; }
+            ps2::KEY_F5 => { convergence::run_with_ps2(ps2); render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue; }
+            ps2::KEY_F6 => { run_form(ps2, fb_vaddr); render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue; }
             _ => {}
         }
 

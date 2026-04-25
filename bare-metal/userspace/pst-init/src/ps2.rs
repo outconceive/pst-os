@@ -255,6 +255,10 @@ impl Ps2 {
         }
     }
 
+    pub fn invalidate_cursor(&mut self) {
+        self.cursor_drawn = false;
+    }
+
     fn draw_cursor(&mut self) {
         if self.fb_vaddr == 0 { return; }
         let vga = self.fb_vaddr as *mut u8;

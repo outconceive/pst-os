@@ -152,11 +152,11 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
                     return cy;
                 }
                 if style.contains("position:relative") {
-                    // Parametric container — children have absolute positions
+                    let (_, _, _, container_h) = parse_position(style);
                     for child in &el.children {
-                        cy = render_vnode(fb, child, x, y, bg, fg);
+                        render_vnode(fb, child, x, y, bg, fg);
                     }
-                    return cy;
+                    return y + container_h;
                 }
             }
 
@@ -227,6 +227,7 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
                     inner_y = render_vnode(fb, child, card_x + pad, inner_y, bg, fg);
                     inner_y += cfg.gap;
                 }
+                if inner_y > card_y + pad { inner_y -= cfg.gap; }
 
                 let card_h = if let Some(h) = cfg.height {
                     h

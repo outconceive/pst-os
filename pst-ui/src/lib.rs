@@ -215,6 +215,7 @@ impl UiState {
     }
 
     pub fn set_focus(&mut self, idx: usize) {
+        if idx >= self.rows.len() { return; }
         if let Some(old) = self.focused { self.rows[old].focus = false; }
         self.rows[idx].focus = true;
         self.focused = Some(idx);

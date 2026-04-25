@@ -60,17 +60,29 @@ pub fn topological_sort(
         }
     }
 
-    let mut queue: VecDeque<&str> = VecDeque::new();
+    // Build name → priority lookup
+    let priority: BTreeMap<&str, u8> = nodes.iter()
+        .map(|n| (n.name.as_str(), n.priority))
+        .collect();
+
+    // Ready queue sorted by priority descending (highest priority first)
+    let mut ready: Vec<&str> = Vec::new();
     for (&node, &deg) in &in_degree {
         if deg == 0 {
-            queue.push_back(node);
+            ready.push(node);
         }
     }
+    ready.sort_by(|a, b| {
+        let pa = priority.get(a).copied().unwrap_or(0);
+        let pb = priority.get(b).copied().unwrap_or(0);
+        pb.cmp(&pa).then_with(|| a.cmp(b))
+    });
 
     let mut order: Vec<String> = Vec::new();
     let mut visited: BTreeSet<&str> = BTreeSet::new();
 
-    while let Some(node) = queue.pop_front() {
+    while let Some(node) = ready.first().copied() {
+        ready.remove(0);
         order.push(String::from(node));
         visited.insert(node);
 
@@ -79,7 +91,13 @@ pub fn topological_sort(
                 if let Some(deg) = in_degree.get_mut(dep) {
                     *deg -= 1;
                     if *deg == 0 {
-                        queue.push_back(dep);
+                        // Insert in priority order
+                        let p = priority.get(dep).copied().unwrap_or(0);
+                        let pos = ready.iter().position(|r| {
+                            let rp = priority.get(r).copied().unwrap_or(0);
+                            p > rp || (p == rp && *dep < *r)
+                        }).unwrap_or(ready.len());
+                        ready.insert(pos, dep);
                     }
                 }
             }
@@ -212,5 +230,25 @@ mod tests {
         let w = result.order.iter().position(|n| n == "writer").unwrap();
         let r = result.order.iter().position(|n| n == "reader").unwrap();
         assert!(w < r);
+    }
+
+    #[test]
+    fn test_priority_ordering() {
+        let nodes = vec![
+            ConstrainedNode {
+                name: String::from("alogd"),
+                constraints: vec![],
+                priority: 1,
+            },
+            ConstrainedNode {
+                name: String::from("zirq"),
+                constraints: vec![],
+                priority: 10,
+            },
+        ];
+        let result = solve_schedule(&nodes);
+        let a = result.order.iter().position(|n| n == "alogd").unwrap();
+        let z = result.order.iter().position(|n| n == "zirq").unwrap();
+        assert!(z < a, "higher priority 'zirq' should come before 'alogd'");
     }
 }

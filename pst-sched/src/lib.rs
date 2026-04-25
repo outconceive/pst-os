@@ -66,16 +66,16 @@ impl Scheduler {
 
             let mut constraints = entry.constraints.clone();
 
-            // Processes with pending messages get an implicit boost:
-            // they run before processes at the same priority with no messages
-            if entry.pending_messages > 0 {
-                // No extra constraint needed — priority handles it
-            }
+            let effective_priority = if entry.pending_messages > 0 {
+                entry.priority.saturating_add(1)
+            } else {
+                entry.priority
+            };
 
             nodes.push(ConstrainedNode {
                 name: entry.name.clone(),
                 constraints,
-                priority: entry.priority,
+                priority: effective_priority,
             });
         }
 

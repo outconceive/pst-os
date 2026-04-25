@@ -29,6 +29,11 @@ pub extern "C" fn main(bootinfo: *const seL4_BootInfo) -> ! {
     // SAFETY: bi is a valid seL4 BootInfo reference.
     let mut alloc = unsafe { UntypedAllocator::new(bi) };
 
+    // TODO (BUG-14): Services need .with_initrd() to actually start.
+    // Requires building an initrd with service ELF binaries and loading
+    // it from the GRUB module list. Currently services are spawned but
+    // never scheduled because no ELF is loaded.
+
     // --- Allocate IPC endpoints for each core service ---
     // Each endpoint is unforgeable. Services communicate ONLY through these.
 
@@ -100,7 +105,6 @@ pub extern "C" fn main(bootinfo: *const seL4_BootInfo) -> ! {
     ProcessBuilder::new("compositor", &mut alloc)
         .grant_endpoint(vfs_ep)
         .grant_endpoint(net_ep)
-        // Phase 8: also grant framebuffer cap
         .spawn()
         .expect("failed to start compositor");
 

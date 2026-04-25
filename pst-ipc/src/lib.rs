@@ -33,6 +33,7 @@ pub enum IpcError {
     NotFound,
     NotRecipient,
     AlreadyRead,
+    NotDelivered,
 }
 
 pub struct Message {
@@ -119,8 +120,10 @@ impl EventLog {
     pub fn ack(&mut self, logical_id: usize) -> Result<(), IpcError> {
         let phys = self.offsets.resolve(logical_id).ok_or(IpcError::NotFound)?;
 
-        if self.meta.get(COL_STATUS, phys) == Some(STATUS_READ) {
-            return Err(IpcError::AlreadyRead);
+        match self.meta.get(COL_STATUS, phys) {
+            Some(STATUS_READ) => return Err(IpcError::AlreadyRead),
+            Some(STATUS_PENDING) => return Err(IpcError::NotDelivered),
+            _ => {}
         }
 
         self.meta.set(COL_STATUS, phys, STATUS_READ);
@@ -205,12 +208,7 @@ impl EventLog {
     }
 
     fn find_logical(&self, physical: usize) -> Option<usize> {
-        for i in 0..self.offsets.len() {
-            if self.offsets.resolve(i) == Some(physical) {
-                return Some(i);
-            }
-        }
-        None
+        self.offsets.reverse_lookup(physical)
     }
 }
 

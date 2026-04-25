@@ -43,18 +43,30 @@ impl OffsetTable {
         self.resolve(logical).is_some()
     }
 
+    pub fn reverse_lookup(&self, physical: usize) -> Option<usize> {
+        self.physical_to_logical
+            .get(physical)
+            .copied()
+            .filter(|&l| l != usize::MAX)
+    }
+
     pub fn rebuild_from_remap(&mut self, remap: &[(usize, usize)]) {
-        // Build old_phys → new_phys lookup
-        let mut phys_map: Vec<(usize, usize)> = Vec::new();
+        // Build old_phys → new_phys lookup via a temporary Vec indexed by old_phys
+        let max_old = remap.iter().map(|&(o, _)| o).max().unwrap_or(0);
+        let mut old_to_new = Vec::with_capacity(max_old + 1);
+        old_to_new.resize(max_old + 1, usize::MAX);
         for &(old_phys, new_phys) in remap {
-            phys_map.push((old_phys, new_phys));
+            old_to_new[old_phys] = new_phys;
         }
 
-        // Update logical → physical mappings
+        // Update logical → physical mappings (O(L), not O(L×R))
         for entry in &mut self.logical_to_physical {
             if let Some(old_phys) = *entry {
-                let new = phys_map.iter().find(|&&(o, _)| o == old_phys);
-                *entry = new.map(|&(_, n)| n);
+                if old_phys < old_to_new.len() && old_to_new[old_phys] != usize::MAX {
+                    *entry = Some(old_to_new[old_phys]);
+                } else {
+                    *entry = None;
+                }
             }
         }
 

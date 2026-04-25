@@ -149,8 +149,12 @@ impl<'a> VSpaceMapper<'a> {
 
             // Copy file data into the page (zero the rest)
             let page_ptr = staging_vaddr as *mut u8;
-            let file_offset = (target_vaddr - seg.vaddr) as usize;
-            let file_data   = seg.file_data;
+            let (file_offset, page_dest_offset) = if target_vaddr >= seg.vaddr {
+                ((target_vaddr - seg.vaddr) as usize, 0usize)
+            } else {
+                (0usize, (seg.vaddr - target_vaddr) as usize)
+            };
+            let file_data = seg.file_data;
 
             unsafe {
                 // Zero the whole page first
@@ -158,12 +162,12 @@ impl<'a> VSpaceMapper<'a> {
 
                 // Copy file bytes that fall within this page
                 let copy_start = file_offset;
-                let copy_end   = (file_offset + 0x1000).min(file_data.len());
+                let copy_end = (file_offset + (0x1000 - page_dest_offset)).min(file_data.len());
                 if copy_start < file_data.len() {
                     let src = &file_data[copy_start..copy_end];
                     core::ptr::copy_nonoverlapping(
                         src.as_ptr(),
-                        page_ptr,
+                        page_ptr.add(page_dest_offset),
                         src.len(),
                     );
                 }

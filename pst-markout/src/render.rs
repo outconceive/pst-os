@@ -314,6 +314,7 @@ fn render_parametric(lines: &[Line], mut container_attrs: BTreeMap<String, Strin
 
     // Compute positions (simplified solver for spatial constraints)
     let mut solved: BTreeMap<String, (f64, f64, f64, f64)> = BTreeMap::new(); // x, y, w, h
+    let mut prev_solved: Option<String> = None;
 
     for name in &result.order {
         let el = match elements.iter().find(|(n, _, _, _)| n == name) {
@@ -342,13 +343,17 @@ fn render_parametric(lines: &[Line], mut container_attrs: BTreeMap<String, Strin
                 Constraint::CenterX(r) => { if let Some(&(rx, _, rw, _)) = solved.get(r) { x = rx + rw / 2.0 - w / 2.0; } }
                 Constraint::CenterY(r) => { if let Some(&(_, ry, _, rh)) = solved.get(r) { y = ry + rh / 2.0 - h / 2.0; } }
                 Constraint::GapX(gap, ref_opt) => {
-                    let r = ref_opt.as_ref().or(first_ref.as_ref());
+                    let r = ref_opt.as_ref()
+                        .or(first_ref.as_ref())
+                        .or(prev_solved.as_ref());
                     if let Some(rr) = r.and_then(|n| solved.get(n.as_str())) {
                         x = rr.0 + rr.2 + gap.pixels;
                     }
                 }
                 Constraint::GapY(gap, ref_opt) => {
-                    let r = ref_opt.as_ref().or(first_ref.as_ref());
+                    let r = ref_opt.as_ref()
+                        .or(first_ref.as_ref())
+                        .or(prev_solved.as_ref());
                     if let Some(rr) = r.and_then(|n| solved.get(n.as_str())) {
                         y = rr.1 + rr.3 + gap.pixels;
                     }
@@ -370,6 +375,7 @@ fn render_parametric(lines: &[Line], mut container_attrs: BTreeMap<String, Strin
         }
 
         solved.insert(name.clone(), (x, y, w, h));
+        prev_solved = Some(name.clone());
     }
 
     // Compute container bounds

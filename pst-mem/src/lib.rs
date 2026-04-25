@@ -85,7 +85,7 @@ impl RegionAllocator {
         }
 
         // Append new region at end of address space
-        if self.next_offset + size > self.total_capacity {
+        if self.next_offset.checked_add(size).map_or(true, |end| end > self.total_capacity) {
             return Err(MemError::OutOfMemory);
         }
 
@@ -306,12 +306,7 @@ impl RegionAllocator {
     }
 
     fn find_logical(&self, physical: usize) -> Option<usize> {
-        for i in 0..self.offsets.len() {
-            if self.offsets.resolve(i) == Some(physical) {
-                return Some(i);
-            }
-        }
-        None
+        self.offsets.reverse_lookup(physical)
     }
 }
 

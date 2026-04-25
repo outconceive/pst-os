@@ -97,12 +97,14 @@ impl UntypedAllocator {
         let slot = self.next_free_slot;
         self.next_free_slot += 1;
 
-        let needed = 1usize << size_bits;
+        let needed = 1usize.checked_shl(size_bits as u32)
+            .ok_or(AllocError::OutOfMemory)?;
 
         for region in &mut self.untypeds {
             if region.is_device { continue; }
 
-            let capacity = 1usize << region.size_bits;
+            let capacity = 1usize.checked_shl(region.size_bits as u32)
+                .unwrap_or(0);
             if capacity - region.used >= needed {
                 let err = unsafe {
                     seL4_Untyped_Retype(

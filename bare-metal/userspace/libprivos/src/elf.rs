@@ -113,7 +113,10 @@ impl<'a> ElfBinary<'a> {
         let data     = self.data;
 
         (0..phnum).filter_map(move |i| {
-            let off = phoff + i * phentsz;
+            let off = match i.checked_mul(phentsz).and_then(|v| phoff.checked_add(v)) {
+                Some(v) => v,
+                None => return None,
+            };
             if off + phentsz > data.len() {
                 return None;
             }
@@ -123,7 +126,10 @@ impl<'a> ElfBinary<'a> {
                 return None;
             }
             let file_start = ph.p_offset as usize;
-            let file_end   = file_start + ph.p_filesz as usize;
+            let file_end = match file_start.checked_add(ph.p_filesz as usize) {
+                Some(v) => v,
+                None => return None,
+            };
             if file_end > data.len() {
                 return None;
             }
@@ -161,7 +167,7 @@ impl LoadSegment<'_> {
 
     /// One past the last page that covers this segment.
     pub fn page_end(&self) -> u64 {
-        (self.vaddr + self.memsz + 0xfff) & !0xfff
+        self.vaddr.saturating_add(self.memsz).saturating_add(0xfff) & !0xfff
     }
 
     /// Number of 4 KiB pages needed.

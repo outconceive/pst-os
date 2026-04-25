@@ -64,7 +64,7 @@ impl<'a> Initrd<'a> {
             ) as usize;
 
             if entry_name == name {
-                let end = offset + size;
+                let end = offset.checked_add(size).ok_or(InitrdError::Truncated)?;
                 if end > self.data.len() {
                     return Err(InitrdError::Truncated);
                 }

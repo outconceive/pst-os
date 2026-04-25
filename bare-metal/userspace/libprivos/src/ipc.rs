@@ -37,14 +37,14 @@ impl Endpoint {
 
     /// Send a message (blocks until the receiver is ready).
     pub fn send(&self, msg: &IpcMessage) {
+        let word_count = msg.words.len().min(seL4_MsgMaxLength);
         let info = seL4_MessageInfo_t::new(
             msg.label,
             0,
             0,
-            msg.words.len() as seL4_Word,
+            word_count as seL4_Word,
         );
-        for (i, &word) in msg.words.iter().enumerate() {
-            // SAFETY: i is bounded by msg.words.len() <= seL4_MsgMaxLength
+        for (i, &word) in msg.words[..word_count].iter().enumerate() {
             unsafe { seL4_SetMR(i as i32, word) };
         }
         unsafe { seL4_Send(self.cap, info) };
@@ -54,7 +54,7 @@ impl Endpoint {
     pub fn recv(&self) -> IpcMessage {
         let mut sender_badge: seL4_Word = 0;
         let info = unsafe { seL4_Recv(self.cap, &mut sender_badge) };
-        let length = info.get_length() as usize;
+        let length = (info.get_length() as usize).min(seL4_MsgMaxLength);
 
         #[cfg(feature = "alloc")]
         let words = {

@@ -187,7 +187,7 @@ impl<'a> ProcessBuilder<'a> {
         // --- 4. Configure and start the TCB ---
         let mut ctx = seL4_UserContext::default();
         ctx.rip = entry_point;
-        ctx.rsp = CHILD_STACK_TOP - 8; // 16-byte aligned stack
+        ctx.rsp = CHILD_STACK_TOP; // 16-byte aligned at _start entry
 
         let err = unsafe {
             seL4_TCB_Configure(

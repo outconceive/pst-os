@@ -35,6 +35,7 @@ pub enum FsError {
     NotFound,
     AlreadyExists,
     NotADirectory,
+    DirectoryNotEmpty,
     NameTooLong,
     DataTooLarge,
     PermissionDenied,
@@ -94,6 +95,11 @@ impl FileSystem {
     pub fn write(&mut self, logical_id: usize, content: &[u8]) -> Result<(), FsError> {
         if content.len() > MAX_DATA { return Err(FsError::DataTooLarge); }
         if !self.offsets.is_valid(logical_id) { return Err(FsError::NotFound); }
+        if let Some(phys) = self.offsets.resolve(logical_id) {
+            if self.meta.get(COL_TYPE, phys) == Some(TYPE_DIR) {
+                return Err(FsError::NotADirectory);
+            }
+        }
         self.data[logical_id] = Some(content.to_vec());
         Ok(())
     }
@@ -121,7 +127,7 @@ impl FileSystem {
                         p
                     };
                     if !self.ls(&prefix).is_empty() {
-                        return Err(FsError::NotADirectory);
+                        return Err(FsError::DirectoryNotEmpty);
                     }
                 }
             }
@@ -130,6 +136,8 @@ impl FileSystem {
         if let Some(phys) = self.offsets.resolve(logical_id) {
             self.meta.tombstone(phys);
             self.offsets.invalidate(logical_id);
+            self.names[logical_id] = None;
+            self.data[logical_id] = None;
         }
         Ok(())
     }

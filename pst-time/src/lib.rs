@@ -103,7 +103,7 @@ impl Timeline {
     /// Query: what was entity's column value at a given tick?
     /// Scans backward from the given tick to find the last change.
     pub fn state_at(&self, entity: u8, column: u8, at_tick: u64) -> Option<u8> {
-        let mut best_tick = 0u64;
+        let mut best_tick: Option<u64> = None;
         let mut best_value = None;
 
         for i in 0..self.offsets.len() {
@@ -113,8 +113,8 @@ impl Timeline {
                 if self.events.get(COL_COLUMN, phys) != Some(column) { continue; }
 
                 let t = self.ticks.get(i).copied().unwrap_or(0);
-                if t <= at_tick && t >= best_tick {
-                    best_tick = t;
+                if t <= at_tick && best_tick.map_or(true, |bt| t > bt) {
+                    best_tick = Some(t);
                     best_value = self.events.get(COL_NEW_VAL, phys);
                 }
             }

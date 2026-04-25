@@ -124,11 +124,8 @@ impl ProcessTable {
         let physicals = self.table.scan(COL_STATE, |v| v == state);
         let mut logicals = Vec::new();
         for phys in physicals {
-            for (logical, _) in self.names.iter().enumerate() {
-                if self.offsets.resolve(logical) == Some(phys) {
-                    logicals.push(logical);
-                    break;
-                }
+            if let Some(logical) = self.offsets.reverse_lookup(phys) {
+                logicals.push(logical);
             }
         }
         logicals

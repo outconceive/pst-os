@@ -195,11 +195,11 @@ impl Watchdog {
     }
 
     fn find_name_by_id(&self, id: u8, entries: &[SchedEntry]) -> String {
-        entries.get(id as usize)
+        entries.iter()
+            .find(|e| e.priority == id)
             .map(|e| e.name.clone())
             .unwrap_or_else(|| {
                 let mut s = String::from("process-");
-                // Manual u8 to string since we're no_std
                 if id >= 100 { s.push((b'0' + id / 100) as char); }
                 if id >= 10 { s.push((b'0' + (id / 10) % 10) as char); }
                 s.push((b'0' + id % 10) as char);

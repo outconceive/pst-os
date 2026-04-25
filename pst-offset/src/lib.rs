@@ -132,7 +132,7 @@ impl RootOffsetTable {
                 }
             }
             if access & ACCESS_READ != 0 {
-                if requester_priv > entry_priv + 1 {
+                if requester_priv > entry_priv {
                     return Err(OffsetError::PrivilegeDenied);
                 }
             }

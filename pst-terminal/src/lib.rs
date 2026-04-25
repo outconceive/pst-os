@@ -37,7 +37,7 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
             let text = t.content.trim();
             if !text.is_empty() {
                 out.push_str(text);
-                ctx.col += text.len();
+                ctx.col += text.chars().count();
             }
         }
         VNode::Element(el) => {
@@ -161,7 +161,7 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
                 out.push_str("\x1b[4;34m"); // underline + blue
                 out.push_str(label.trim());
                 out.push_str(ansi::RESET);
-                ctx.col += label.trim().len();
+                ctx.col += label.trim().chars().count();
                 return;
             }
 
@@ -180,7 +180,7 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
                 out.push_str(label.trim());
                 out.push(' ');
                 out.push_str(ansi::RESET);
-                ctx.col += label.trim().len() + 2;
+                ctx.col += label.trim().chars().count() + 2;
                 return;
             }
 
@@ -190,7 +190,7 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
                 out.push_str(&ansi::fg(255, 255, 255));
                 out.push_str(label.trim());
                 out.push_str(ansi::RESET);
-                ctx.col += label.trim().len();
+                ctx.col += label.trim().chars().count();
                 return;
             }
 
@@ -234,7 +234,7 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
             if class.contains("mc-label") {
                 let content = text_content(node);
                 out.push_str(&content);
-                ctx.col += content.len();
+                ctx.col += content.chars().count();
                 return;
             }
 
@@ -291,7 +291,7 @@ fn render_button(out: &mut String, el: &VElement, ctx: &mut RenderCtx) {
     out.push_str(label.trim());
     out.push_str(" ");
     out.push_str(ansi::RESET);
-    ctx.col += label.trim().len() + 2;
+    ctx.col += label.trim().chars().count() + 2;
 }
 
 fn style_to_rgb(class: &str) -> (u8, u8, u8) {
