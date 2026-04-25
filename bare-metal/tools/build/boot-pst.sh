@@ -67,8 +67,11 @@ if [ "$BOOT_ONLY" = false ]; then
     cat > "$ISO_TMP/boot/grub/grub.cfg" << 'GRUBCFG'
 set timeout=0
 set default=0
+set gfxpayload=640x480x32
 
 menuentry "PST OS — Parallel String Theory" {
+    insmod vbe
+    set gfxpayload=640x480x32
     multiboot2 /boot/kernel.elf
     module2    /boot/init.elf
     boot

@@ -9,72 +9,47 @@ set ISO=%~dp0bare-metal\tools\image\pst-os.iso
 
 if not exist "%ISO%" (
     echo ERROR: ISO not found at %ISO%
-    echo Build it first in WSL.
     pause
     exit /b 1
 )
 
-:: Try VirtualBox first (most likely already installed)
-where VBoxManage >nul 2>&1
-if %errorlevel%==0 (
-    set VBOX=VBoxManage
-    goto :virtualbox
-)
-if exist "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" (
-    set VBOX="C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
-    goto :virtualbox
-)
+:: Find VirtualBox or QEMU
+set VBOX=
+set QEMU=
+where VBoxManage >nul 2>&1 && set VBOX=VBoxManage
+if not defined VBOX if exist "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" set "VBOX=C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
+where qemu-system-x86_64 >nul 2>&1 && set QEMU=qemu-system-x86_64
 
-:: Fall back to QEMU
-where qemu-system-x86_64 >nul 2>&1
-if %errorlevel%==0 (
-    set QEMU=qemu-system-x86_64
-    goto :qemu
-)
-if exist "C:\Program Files\qemu\qemu-system-x86_64.exe" (
-    set QEMU="C:\Program Files\qemu\qemu-system-x86_64.exe"
-    goto :qemu
-)
-
-echo Neither VirtualBox nor QEMU found.
-echo Install one of:
-echo   VirtualBox: https://www.virtualbox.org/wiki/Downloads
-echo   QEMU:       winget install SoftwareFreedomConservancy.QEMU
+if defined VBOX goto :vbox
+if defined QEMU goto :qemu
+echo No VM software found. Install VirtualBox or QEMU.
 pause
 exit /b 1
 
-:virtualbox
+:vbox
 echo Using VirtualBox
-echo.
+echo Killing any stale VBoxSVC...
+taskkill /f /im VBoxSVC.exe >nul 2>&1
+taskkill /f /im VBoxHeadless.exe >nul 2>&1
+taskkill /f /im VirtualBoxVM.exe >nul 2>&1
 
-:: Clean up any previous PST OS VM
-%VBOX% showvminfo "PST-OS" >nul 2>&1
-if %errorlevel%==0 (
-    %VBOX% controlvm "PST-OS" poweroff >nul 2>&1
-    timeout /t 2 /nobreak >nul
-    %VBOX% unregistervm "PST-OS" --delete >nul 2>&1
-)
-
-:: Create VM
-%VBOX% createvm --name "PST-OS" --ostype Other_64 --register
-%VBOX% modifyvm "PST-OS" --memory 2048 --cpus 2 --graphicscontroller vmsvga
-%VBOX% modifyvm "PST-OS" --uart1 0x3F8 4 --uartmode1 file "%~dp0pst-serial.log"
-%VBOX% storagectl "PST-OS" --name "IDE" --add ide
-%VBOX% storageattach "PST-OS" --storagectl "IDE" --port 0 --device 0 --type dvddrive --medium "%ISO%"
+echo Creating VM...
+"%VBOX%" unregistervm "PST-OS" --delete >nul 2>&1
+"%VBOX%" createvm --name "PST-OS" --ostype Other_64 --register
+"%VBOX%" modifyvm "PST-OS" --memory 2048 --cpus 2 --graphicscontroller vboxvga --vram 64
+"%VBOX%" modifyvm "PST-OS" --uart1 0x3F8 4 --uartmode1 file "%~dp0pst-serial.log"
+"%VBOX%" storagectl "PST-OS" --name "IDE" --add ide
+"%VBOX%" storageattach "PST-OS" --storagectl "IDE" --port 0 --device 0 --type dvddrive --medium "%ISO%"
 
 echo.
-echo Booting PST OS in VirtualBox...
-echo Close the VM window to quit.
-echo.
-%VBOX% startvm "PST-OS"
-goto :end
+echo Booting... Serial log: pst-serial.log
+"%VBOX%" startvm "PST-OS"
+pause
+exit /b 0
 
 :qemu
 echo Using QEMU
 echo.
-echo Booting PST OS... Close the window to quit.
-echo.
-%QEMU% -cdrom "%ISO%" -m 2G -serial stdio -no-reboot
-goto :end
-
-:end
+"%QEMU%" -cdrom "%ISO%" -m 2G -serial stdio -no-reboot
+pause
+exit /b 0

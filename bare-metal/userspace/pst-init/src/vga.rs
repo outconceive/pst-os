@@ -237,67 +237,84 @@ pub fn init(bootinfo: *const seL4_BootInfo) -> Option<VgaState> {
             seL4_CapRights_t::READ_WRITE, seL4_X86_Default_VMAttributes)
     };
 
-    if map_err == seL4_NoError {
-            serial_print("[vga] Mapped! Writing to VGA framebuffer...\n");
-
-            // Write test pixels — QEMU standard VGA in default mode
-            // The BAR0 points to the linear framebuffer.
-            // In text mode (default), this is the VGA text buffer.
-            // In graphics mode, this is pixel data.
-            // QEMU boots in text mode — write character cells.
-            let vga = fb_vaddr as *mut u8;
-            let wb: u8 = 0x1F; // white on blue
-            let yb: u8 = 0x1E; // yellow on blue
-
-            // Clear screen (80x25 text mode cells)
-            for i in 0..(80 * 25) {
-                unsafe {
-                    *vga.add(i * 2) = b' ';
-                    *vga.add(i * 2 + 1) = wb;
-                }
-            }
-
-            // Title bar
-            write_str(vga, 0, 1, " PST OS v0.1 | x86_64 | seL4 ", yb);
-
-            // Card
-            write_str(vga, 2, 2, "+--------------------------------------------+", wb);
-            for row in 3..14 {
-                write_str(vga, row, 2, "|", wb);
-                write_str(vga, row, 49, "|", wb);
-            }
-            write_str(vga, 14, 2, "+--------------------------------------------+", wb);
-
-            write_str(vga, 3, 4, "Parallel String Theory OS", wb);
-            write_str(vga, 4, 4, "=========================", wb);
-            write_str(vga, 6, 14, "PST OS v0.1", yb);
-            write_str(vga, 7, 13, "x86_64 / seL4", wb);
-            write_str(vga, 8, 13, "Boot complete", wb);
-            write_str(vga, 10, 4, "One primitive. One loop. One OS.", wb);
-
-            write_str(vga, 16, 2, "Boot log:", wb);
-            write_str(vga, 17, 4, "cryptod -> driverd -> netd -> vfs", wb);
-            write_str(vga, 18, 4, "  -> driver-nic -> compositor", wb);
-            write_str(vga, 19, 4, "12 lines parsed, 964 bytes HTML", wb);
-            write_str(vga, 20, 4, "320x200 framebuffer rendered", wb);
-
-            write_str(vga, 24, 1,
-                " No Wayland | No X11 | No display server | Markout -> pixels ", yb);
-
-            serial_print("[vga] Desktop on screen!\n");
-
-            let final_slot = alloc.next_slot();
-            return Some(VgaState { fb_vaddr, next_slot: final_slot, pci_cap });
-    } else {
-        serial_print("[vga] Map failed: ");
+    if map_err != seL4_NoError {
+        serial_print("[vga] BAR map failed: ");
         serial_print_num(map_err as usize);
         serial_print("\n");
+        let final_slot = alloc.next_slot();
+        return Some(VgaState { fb_vaddr, next_slot: final_slot, pci_cap });
     }
 
-    None
+    serial_print("[vga] BAR mapped, switching to graphics mode...\n");
+
+    // Issue I/O port cap for Bochs VBE registers (0x01CE-0x01CF)
+    let vbe_cap = alloc.next_slot();
+    let err = unsafe {
+        seL4_X86_IOPortControl_Issue(
+            seL4_CapIOPortControl, 0x01CE, 0x01D0,
+            seL4_CapInitThreadCNode, vbe_cap, 64,
+        )
+    };
+    if err != seL4_NoError {
+        serial_print("[vga] VBE port cap failed: ");
+        serial_print_num(err as usize);
+        serial_print("\n");
+    } else {
+        // Program Bochs VBE to switch to 640x480x32 linear framebuffer
+        let width: usize = 640;
+        let height: usize = 480;
+        vbe_write(vbe_cap, 0x04, 0x00);       // disable
+        vbe_write(vbe_cap, 0x01, width as u16);  // xres
+        vbe_write(vbe_cap, 0x02, height as u16); // yres
+        vbe_write(vbe_cap, 0x03, 32);            // bpp
+        vbe_write(vbe_cap, 0x04, 0x41);       // enable + LFB
+
+        serial_print("[vga] VBE mode set: 640x480x32\n");
+
+        // Render Markout to pixels
+        use pst_framebuffer::{Framebuffer, Color, render_markout};
+
+        let mut fb = Framebuffer::new(width, height);
+        fb.clear(Color::DARK_BG);
+
+        render_markout(&mut fb, "\
+@card
+| Parallel String Theory OS
+| ==========================
+|
+@parametric
+| {label:title \"PST OS v0.1\"}
+| {label:arch \"x86_64 / seL4\" center-x:title gap-y:8}
+| {label:status \"Boot complete\" center-x:title gap-y:8:arch}
+@end parametric
+|
+| One primitive. One loop. One OS.
+@end card", Color::DARK_BG, Color::WHITE);
+
+        let bar_y = height - 16;
+        fb.fill_rect(0, bar_y, width, 16, Color::rgb(40, 40, 40));
+        fb.draw_text(8, bar_y + 4, "Markout -> pixels | No Wayland | No X11 | No display server", Color::rgb(200, 200, 200), Color::rgb(40, 40, 40));
+
+        // Blit to VGA memory
+        let vga = fb_vaddr as *mut u8;
+        unsafe { core::ptr::copy_nonoverlapping(fb.pixels.as_ptr(), vga, width * 4 * height); }
+
+        serial_print("[vga] Pixels rendered!\n");
+    }
+
+    serial_print("[vga] Desktop on screen!\n");
+    let final_slot = alloc.next_slot();
+    Some(VgaState { fb_vaddr, next_slot: final_slot, pci_cap })
 }
 
-pub fn write_str(vga: *mut u8, row: usize, col: usize, s: &str, attr: u8) {
+fn vbe_write(port_cap: u64, index: u16, value: u16) {
+    unsafe {
+        native::sel4_ioport_out16(port_cap, 0x01CE, index);
+        native::sel4_ioport_out16(port_cap, 0x01CF, value);
+    }
+}
+
+fn write_str(vga: *mut u8, row: usize, col: usize, s: &str, attr: u8) {
     let mut offset = (row * 80 + col) * 2;
     for b in s.bytes() {
         if offset + 1 >= 80 * 25 * 2 { break; }

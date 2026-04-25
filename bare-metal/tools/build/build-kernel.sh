@@ -59,6 +59,10 @@ if [ ! -f "$BUILD_DIR/build.ninja" ]; then
         -DKernelRootCNodeSizeBits=19 \
         -DKernelMaxNumNodes=16 \
         -DKernelHugePage=OFF \
+        -DKernelMultibootGFXMode=linear \
+        -DKernelMultibootGFXDepth=32 \
+        -DKernelMultibootGFXWidth=640 \
+        -DKernelMultibootGFXHeight=480 \
         -DKernelIOMMU="$IOMMU"
 fi
 
