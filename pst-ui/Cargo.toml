@@ -1,0 +1,12 @@
+[package]
+name = "pst-ui"
+version = "0.1.0"
+edition = "2021"
+description = "PST OS interaction model — UI state as parallel strings"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[dependencies]
+pst-markout = { path = "../pst-markout" }

@@ -15,6 +15,7 @@ members = [
     "pst-framebuffer",
     "pst-terminal",
     "pst-blk",
+    "pst-ui",
     "pst-integration",
 ]
 
