@@ -263,33 +263,129 @@ fn render_desktop(windows: &[Window], focused: usize, _fb_vaddr: u64) {
 
 fn run_form(ps2: &mut Ps2, fb_vaddr: u64) {
     if fb_vaddr == 0 { return; }
+    use pst_framebuffer::{Framebuffer, Color};
 
-    let form_doc = "\
-@card
-| Login
-|
-| {input:username}  Username
-| {password:pass}  Password
-| {checkbox:remember}  Remember me
-|
-| {button:login \"Sign In\" primary}
-@end card";
+    // State: field values and focus
+    let field_names = ["username", "pass", "remember"];
+    let field_types = [0u8, 1, 2]; // 0=text, 1=password, 2=checkbox
+    let mut values = [String::new(), String::new(), String::new()];
+    let mut checked = false;
+    let mut focus: usize = 0;
 
-    use pst_framebuffer::{Framebuffer, Color, render_markout};
-    let mut fb = Framebuffer::new(640, 480);
-    fb.clear(Color::DARK_BG);
-    render_markout(&mut fb, form_doc, Color::DARK_BG, Color::WHITE);
+    // Field positions (y coords, computed from card layout)
+    let field_x = 32;
+    let field_ys = [100, 130, 160];
+    let field_w = 200;
+    let field_h = 22;
+    let btn_y = 200;
 
-    // Status text
-    fb.draw_text_transparent(16, 460, "Esc to close", Color::GRAY);
-
-    let vga = fb_vaddr as *mut u8;
-    unsafe { core::ptr::copy_nonoverlapping(fb.pixels.as_ptr(), vga, 640 * 4 * 480); }
-
-    // Wait for Esc
     loop {
+        // Build Markout with current state injected as text
+        let mut fb = Framebuffer::new(640, 480);
+        fb.clear(Color::DARK_BG);
+
+        // Title
+        fb.draw_text_transparent(field_x, 50, "PST OS Login", Color::WHITE);
+        fb.draw_hline(field_x, 66, 160, Color::rgb(59, 130, 246));
+
+        // Render each field
+        for i in 0..3 {
+            let y = field_ys[i];
+            let tab_w = 5;
+            let focused = i == focus;
+
+            let (tab_color, tab_hi) = match field_types[i] {
+                0 => (Color::rgb(59, 130, 246), Color::rgb(99, 170, 255)),
+                1 => (Color::rgb(239, 68, 68), Color::rgb(255, 108, 108)),
+                _ => (Color::rgb(16, 185, 129), Color::rgb(56, 225, 169)),
+            };
+
+            let bg = if focused { Color::rgb(60, 60, 65) } else { Color::rgb(50, 50, 55) };
+            let border = if focused { Color::rgb(90, 90, 100) } else { Color::rgb(70, 70, 75) };
+
+            if field_types[i] == 2 {
+                // Checkbox
+                fb.fill_rect(field_x, y, 22, field_h, bg);
+                fb.fill_rect(field_x, y, tab_w, field_h, tab_color);
+                fb.fill_rect(field_x, y, tab_w, 1, tab_hi);
+                fb.draw_hline(field_x, y, 22, border);
+                fb.draw_hline(field_x, y + field_h - 1, 22, Color::rgb(40, 40, 45));
+                fb.fill_rect(field_x + tab_w + 3, y + 3, 14, 14, Color::rgb(40, 40, 45));
+                fb.draw_hline(field_x + tab_w + 3, y + 3, 14, Color::rgb(70, 70, 75));
+                if checked {
+                    let cc = Color::rgb(50, 255, 120);
+                    for j in 0..4usize { fb.fill_rect(field_x + tab_w + 6 + j, y + 8 + j, 2, 2, cc); }
+                    for j in 0..7usize { fb.fill_rect(field_x + tab_w + 9 + j, y + 11 - j, 2, 2, cc); }
+                }
+                fb.draw_text_transparent(field_x + 30, y + 5, "Remember me", Color::rgb(200, 200, 200));
+            } else {
+                // Text/password field
+                fb.fill_rect(field_x, y, field_w, field_h, bg);
+                fb.fill_rect(field_x, y, tab_w, field_h, tab_color);
+                fb.fill_rect(field_x, y, tab_w, 1, tab_hi);
+                fb.draw_hline(field_x, y, field_w, border);
+                fb.draw_hline(field_x, y + field_h - 1, field_w, Color::rgb(40, 40, 45));
+
+                let text_x = field_x + tab_w + 6;
+                let display: String = if field_types[i] == 1 {
+                    (0..values[i].len()).map(|_| '*').collect()
+                } else {
+                    values[i].clone()
+                };
+                fb.draw_text_transparent(text_x, y + 5, &display, Color::WHITE);
+
+                // Cursor
+                if focused {
+                    let cx = text_x + display.len() * 8;
+                    fb.fill_rect(cx, y + 4, 2, field_h - 8, Color::WHITE);
+                }
+
+                // Label
+                let label = if field_types[i] == 0 { "Username" } else { "Password" };
+                fb.draw_text_transparent(field_x + field_w + 8, y + 5, label, Color::rgb(150, 150, 150));
+            }
+        }
+
+        // Submit button
+        let btn_w = 120;
+        let btn_h = 28;
+        fb.fill_rect(field_x, btn_y, btn_w, btn_h, Color::rgb(59, 130, 246));
+        fb.draw_hline(field_x, btn_y, btn_w, Color::rgb(99, 170, 255));
+        fb.draw_hline(field_x, btn_y + btn_h - 1, btn_w, Color::rgb(30, 90, 200));
+        fb.draw_text(field_x + 28, btn_y + 8, "Sign In", Color::WHITE, Color::rgb(59, 130, 246));
+
+        fb.draw_text_transparent(field_x, 250, "Esc=close  Tab=next field", Color::rgb(80, 80, 80));
+
+        let vga = fb_vaddr as *mut u8;
+        unsafe { core::ptr::copy_nonoverlapping(fb.pixels.as_ptr(), vga, 640 * 4 * 480); }
+
+        // Handle input
         match ps2.read_event() {
             InputEvent::Key(0x1B) => return,
+            InputEvent::Key(b'\t') => { focus = (focus + 1) % 3; }
+            InputEvent::Key(ch) => {
+                if field_types[focus] == 2 {
+                    if ch == b' ' || ch == b'\n' { checked = !checked; }
+                } else {
+                    if ch == 0x08 { values[focus].pop(); }
+                    else if ch >= 0x20 && ch < 0x80 { values[focus].push(ch as char); }
+                }
+            }
+            InputEvent::Click { x, y } => {
+                for i in 0..3 {
+                    if x >= field_x && x < field_x + field_w && y >= field_ys[i] && y < field_ys[i] + field_h {
+                        focus = i;
+                        if field_types[i] == 2 { checked = !checked; }
+                        break;
+                    }
+                }
+                if x >= field_x && x < field_x + btn_w && y >= btn_y && y < btn_y + btn_h {
+                    serial_print("[form] Login: ");
+                    serial_print(&values[0]);
+                    serial_print("\n");
+                    return;
+                }
+            }
             _ => {}
         }
     }
