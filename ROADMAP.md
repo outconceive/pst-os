@@ -25,12 +25,39 @@
 - Framebuffer renders 320×200 pixels in memory
 - All output via seL4_DebugPutChar syscall
 
-### VGA Display (in progress)
-- IPC buffer found and working
-- PCI bus probe finds VGA device at BAR0=0xFD000000
-- Device untyped covering BAR found (32MB at 0xFC000000)
-- 2MB large pages retyped successfully
-- **Blocked on**: mapping the large page into VSpace (page table setup)
+### VGA Display (done)
+- PCI bus probe, device untyped, 2MB large pages, page table mapping
+- CONFIG_HUGE_PAGE=1 shifted object type constants — fixed
+
+### Keyboard Input (done)
+- PS/2 IRQ via IOAPIC, scancode-to-ASCII translation
+
+### Terminal Renderer (done)
+- pst-terminal crate — Markout to ANSI escape sequences (7 tests)
+
+### Markout Shell (done)
+- Type Markout, render live to serial via pst-terminal
+
+### Multiple Windows (done)
+- Desktop with Tab focus, status bar, box-drawing borders
+
+### Persistence (done)
+- virtio-blk driver, flat filesystem, save/restore desktop
+
+### Network (done)
+- virtio-net driver, smoltcp TCP/IP stack
+
+### Browser (done)
+- dt:// protocol — Markout pages from disk with /pst/index.md
+- gh:// protocol — fetch from GitHub via host proxy
+
+### Apps (done)
+- Text editor (.txt/.md word processor with save to disk)
+- Code stepper (syntax highlighting, side-by-side output)
+
+### Outconceive Convergence (done)
+- Same Markout → same VNode tree → HTML / ANSI / pixels
+- The web framework and the OS are the same thing
 
 ---
 

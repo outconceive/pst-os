@@ -49,6 +49,15 @@ A kernel panic is just a cycle in the constraint graph. The topological sort fai
 | **pst-vfs** | Filesystem — files are rows, directories are naming conventions, `ls()` is prefix scan, `find()` is grep, delete is tombstone |
 | **pst-ipc** | IPC event log — append-only message passing, priority-ordered delivery, broadcast, ack/GC lifecycle |
 | **pst-sched** | Scheduler — topological sort over process constraints, cycle detection = watchdog tombstone, blocked processes wake on pending messages |
+| **pst-watchdog** | Cycle detection, heartbeat monitoring, escalating tombstone |
+| **pst-mem** | Append-only region allocator with shared memory and coalescing |
+| **pst-offset** | Immortal root with privilege enforcement |
+| **pst-time** | Temporal dimension with tiered compaction |
+| **pst-markout** | Markout parser + parametric renderer (no_std) |
+| **pst-framebuffer** | Pixel renderer — Markout to VGA, no display server |
+| **pst-terminal** | Terminal renderer — Markout to ANSI escape sequences |
+| **pst-blk** | Block device interface — virtio-blk driver for persistence |
+| **pst-integration** | 9 cross-crate tests proving subsystems work together |
 
 ## Example: boot sequence
 
@@ -122,10 +131,10 @@ log.compact(); // reclaims space
 ## Tests
 
 ```sh
-cargo test --target x86_64-pc-windows-msvc
+cargo test
 ```
 
-56 tests across all crates. Key tests:
+137+ tests across all crates. Key tests:
 
 - `test_privion_full_boot` — solver produces correct boot order from constraints
 - `test_interrupt_as_high_priority_append` — IRQs are just priority appends
@@ -133,42 +142,33 @@ cargo test --target x86_64-pc-windows-msvc
 - `test_identity_never_changes` — file ID survives 10 create/delete/compact cycles
 - `test_ls_prefix_scan` — directory listing is a string scan, not a tree walk
 
-## Boot proof
+## What boots
 
-PST OS boots on the seL4 microkernel and renders Markout from a cold boot:
+PST OS boots on the seL4 microkernel into a windowed desktop with:
+
+- **VGA framebuffer** — 2MB large page mapped through seL4 capabilities
+- **Keyboard input** — PS/2 IRQ via IOAPIC, scancode translation
+- **Multiple windows** — Tab switches focus, status bar, box-drawing borders
+- **Markout shell** — type Markout, see it render live via pst-terminal
+- **Text editor** — .txt and .md word processor, saves to disk
+- **Code stepper** — syntax-highlighted Rust with side-by-side output
+- **dt:// browser** — Markout pages from disk with `/pst/index.md` resolution
+- **gh:// browser** — fetch Markout from GitHub via host proxy (crypto offload NIC)
+- **Persistence** — virtio-blk driver, save/restore desktop across reboots
+- **Network** — virtio-net driver, smoltcp TCP/IP stack
 
 ```
-Booting all finished, dropped to user space
-PST
-
-========================================
-  Parallel String Theory OS
-  Booting on seL4 microkernel...
-========================================
-
-[pst-offset] Creating immortal root...
-[pst-offset] Position 0: bootloader (HARDWARE)
-[pst-offset] Position 1: solver (KERNEL)
-[pst-offset] Immortal root: 2 positions
-
-[proctable] 6 services registered
-[pst-sched] Boot order: cryptod -> driverd -> netd -> vfs -> driver-nic -> compositor
-[pst-sched] No cycles detected
-
-[pst-markout] Parsed 12 lines
-[pst-markout] Rendering to VDOM...
-[pst-markout] HTML output (964 bytes):
-
-<div class="mc-app"><div class="mc-card">...</div></div>
-
-========================================
-  PST OS boot complete.
-  Markout rendered on bare metal.
-  The thesis is proven.
-========================================
+[vga] PDPT: exists
+[vga] PD: mapped
+[vga] Mapped! Writing to VGA framebuffer...
+[vga] Desktop on screen!
+[blk] virtio-blk at slot 4 — 2048 sectors (1024 KiB)
+[net] virtio-net at slot 3 — MAC: 52:54:0:12:34:56
+[kb] Keyboard ready
+[shell] Markout shell ready.
 ```
 
-159KB static ELF. x86_64. seL4 microkernel. Serial output via `seL4_DebugPutChar`. Process table, constraint solver, Markout parser, parametric renderer, and HTML serializer — all running on bare metal in `no_std` Rust.
+217KB static ELF. x86_64. seL4 microkernel. No Wayland. No X11. No display server. No browser engine. Markout all the way down.
 
 ## Origin
 
