@@ -103,6 +103,12 @@ pub const KEY_UP: u8 = 0x80;
 pub const KEY_DOWN: u8 = 0x81;
 pub const KEY_LEFT: u8 = 0x82;
 pub const KEY_RIGHT: u8 = 0x83;
+pub const KEY_F1: u8 = 0xF1;
+pub const KEY_F2: u8 = 0xF2;
+pub const KEY_F3: u8 = 0xF3;
+pub const KEY_F4: u8 = 0xF4;
+pub const KEY_F5: u8 = 0xF5;
+pub const KEY_F6: u8 = 0xF6;
 
 impl Keyboard {
     pub fn read_key(&self) -> u8 {
@@ -125,6 +131,17 @@ impl Keyboard {
                     0x4D => return KEY_RIGHT,
                     _ => continue,
                 }
+            }
+
+            // F-keys (not in ASCII table)
+            match scancode {
+                0x3B => return KEY_F1,
+                0x3C => return KEY_F2,
+                0x3D => return KEY_F3,
+                0x3E => return KEY_F4,
+                0x3F => return KEY_F5,
+                0x40 => return KEY_F6,
+                _ => {}
             }
 
             let ascii = SCANCODE_TO_ASCII[scancode as usize & 0x7F];

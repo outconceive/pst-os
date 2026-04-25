@@ -14,6 +14,7 @@ mod codeview;
 mod editor;
 mod browser;
 mod convergence;
+mod vgacon;
 mod net;
 mod rng;
 
@@ -73,6 +74,7 @@ pub fn serial_print(s: &str) {
             unsafe { debug_putchar(b'\r'); }
         }
         unsafe { debug_putchar(b); }
+        vgacon::putchar(b);
     }
 }
 
@@ -263,6 +265,8 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
             serial_print("[vga] IPC buffer set. seL4 invocations enabled.\n");
 
             if let Some(vga_state) = vga::init(bi_ptr) {
+                vgacon::init(vga_state.fb_vaddr);
+
                 // Try to set up block storage
                 let (store, next_slot) = storage::setup(
                     bi_ptr, vga_state.pci_cap, vga_state.next_slot,
@@ -280,7 +284,7 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
                 serial_print("========================================\n\n");
 
                 if let Some(kb) = keyboard::setup(bi_ptr, next_slot) {
-                    desktop::run(&kb, store, net_dev);
+                    desktop::run(&kb, store, net_dev, vga_state.fb_vaddr);
                 }
             }
         } else {

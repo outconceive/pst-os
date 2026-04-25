@@ -98,6 +98,7 @@ pub fn run(kb: &Keyboard, store: &mut Option<Storage>, net: &mut Option<VirtioNe
                     } else if c < 0x80 {
                         url_input.push(c as char);
                         unsafe { crate::debug_putchar(c) };
+                        crate::vgacon::putchar(c);
                     }
                 }
                 if !url_input.is_empty() {

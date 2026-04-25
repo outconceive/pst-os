@@ -90,7 +90,10 @@ unsafe fn sel4_call(
 pub unsafe fn sel4_wait_notification(notif_cap: seL4_CPtr) -> u64 {
     let badge: u64;
     core::arch::asm!(
+        "mov {save}, rsp",
         "syscall",
+        "mov rsp, {save}",
+        save = out(reg) _,
         in("rdx") SYS_RECV,
         inout("rdi") notif_cap as u64 => badge,
         out("rsi") _,
@@ -100,7 +103,6 @@ pub unsafe fn sel4_wait_notification(notif_cap: seL4_CPtr) -> u64 {
         out("r15") _,
         out("rcx") _,
         lateout("r11") _,
-        options(nostack),
     );
     badge
 }

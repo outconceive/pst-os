@@ -36,7 +36,7 @@ taskkill /f /im VirtualBoxVM.exe >nul 2>&1
 echo Creating VM...
 "%VBOX%" unregistervm "PST-OS" --delete >nul 2>&1
 "%VBOX%" createvm --name "PST-OS" --ostype Other_64 --register
-"%VBOX%" modifyvm "PST-OS" --memory 2048 --cpus 2 --graphicscontroller vboxvga --vram 64
+"%VBOX%" modifyvm "PST-OS" --memory 2048 --cpus 2 --graphicscontroller vboxvga --vram 64 --keyboard ps2 --mouse ps2 --usb off
 "%VBOX%" modifyvm "PST-OS" --uart1 0x3F8 4 --uartmode1 file "%~dp0pst-serial.log"
 "%VBOX%" storagectl "PST-OS" --name "IDE" --add ide
 "%VBOX%" storageattach "PST-OS" --storagectl "IDE" --port 0 --device 0 --type dvddrive --medium "%ISO%"

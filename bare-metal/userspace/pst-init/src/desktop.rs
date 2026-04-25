@@ -61,7 +61,7 @@ const DEMO_OUTPUT: &[&str] = &[
     "PST OS ready.",
 ];
 
-pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net::VirtioNet>) {
+pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net::VirtioNet>, fb_vaddr: u64) {
     let mut windows = Vec::new();
 
     let restored = store.as_mut().and_then(|s| s.load_desktop());
@@ -78,14 +78,14 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
         windows.push(Window::new("Terminal"));
         windows.push(Window::new("Scratch"));
         windows[0].doc.push(String::from("| Welcome to PST OS"));
-        windows[0].doc.push(String::from("| Tab=switch  Esc=save  c=code  e=edit  m=md  w=web"));
+        windows[0].doc.push(String::from("| Tab=switch  F1=edit  F2=md  F3=web  F4=code"));
     }
 
     let mut focused: usize = 0;
     let mut codeview: Option<CodeView> = None;
     let mut editor: Option<Editor> = None;
 
-    render_desktop(&windows, focused);
+    render_desktop(&windows, focused, fb_vaddr);
     print_prompt(&windows[focused]);
 
     loop {
@@ -105,12 +105,12 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
                     serial_print(&ed.filename);
                     serial_print("\n");
                     editor = None;
-                    render_desktop(&windows, focused);
+                    render_desktop(&windows, focused, fb_vaddr);
                     print_prompt(&windows[focused]);
                 }
                 EditorAction::Quit => {
                     editor = None;
-                    render_desktop(&windows, focused);
+                    render_desktop(&windows, focused, fb_vaddr);
                     print_prompt(&windows[focused]);
                 }
             }
@@ -122,7 +122,7 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
             match ch {
                 b'q' => {
                     codeview = None;
-                    render_desktop(&windows, focused);
+                    render_desktop(&windows, focused, fb_vaddr);
                     print_prompt(&windows[focused]);
                 }
                 keyboard::KEY_DOWN | b'j' => {
@@ -138,47 +138,41 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
             continue;
         }
 
-        // Open editor (e=text, m=markout)
-        if ch == b'e' {
-            let mut ed = Editor::new("untitled.txt");
+        // F1=editor  F2=markout  F3=browser  F4=code  F5=convergence
+        if ch == keyboard::KEY_F1 {
+            let ed = Editor::new("untitled.txt");
             serial_print(&ed.render());
             editor = Some(ed);
             continue;
         }
-        if ch == b'm' {
-            let mut ed = Editor::new("untitled.md");
+        if ch == keyboard::KEY_F2 {
+            let ed = Editor::new("untitled.md");
             serial_print(&ed.render());
             editor = Some(ed);
             continue;
         }
-
-        // Convergence proof
-        if ch == b'7' {
-            convergence::run(kb);
-            render_desktop(&windows, focused);
-            print_prompt(&windows[focused]);
-            continue;
-        }
-
-        // Open browser
-        if ch == b'w' {
+        if ch == keyboard::KEY_F3 {
             browser::run(kb, &mut store, &mut net);
-            render_desktop(&windows, focused);
+            render_desktop(&windows, focused, fb_vaddr);
             print_prompt(&windows[focused]);
             continue;
         }
-
-        // Open code viewer
-        if ch == b'c' {
+        if ch == keyboard::KEY_F4 {
             let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
             serial_print(&cv.render());
             codeview = Some(cv);
             continue;
         }
+        if ch == keyboard::KEY_F5 {
+            convergence::run(kb);
+            render_desktop(&windows, focused, fb_vaddr);
+            print_prompt(&windows[focused]);
+            continue;
+        }
 
         if ch == b'\t' {
             focused = (focused + 1) % windows.len();
-            render_desktop(&windows, focused);
+            render_desktop(&windows, focused, fb_vaddr);
             print_prompt(&windows[focused]);
             continue;
         }
@@ -204,7 +198,7 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
                 if !win.doc.is_empty() {
                     win.doc.clear();
                 }
-                render_desktop(&windows, focused);
+                render_desktop(&windows, focused, fb_vaddr);
                 print_prompt(&windows[focused]);
                 continue;
             }
@@ -212,7 +206,7 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
             win.doc.push(win.line.clone());
             win.line.clear();
 
-            render_desktop(&windows, focused);
+            render_desktop(&windows, focused, fb_vaddr);
             print_prompt(&windows[focused]);
         } else if ch == 0x08 {
             if !win.line.is_empty() {
@@ -222,11 +216,12 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
         } else if ch < 0x80 {
             win.line.push(ch as char);
             unsafe { crate::debug_putchar(ch) };
+            crate::vgacon::putchar(ch);
         }
     }
 }
 
-fn render_desktop(windows: &[Window], focused: usize) {
+fn render_desktop(windows: &[Window], focused: usize, _fb_vaddr: u64) {
     let mut doc = String::new();
 
     doc.push_str("@card\n");
