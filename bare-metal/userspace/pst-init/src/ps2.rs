@@ -66,8 +66,10 @@ pub struct Ps2 {
     mouse_x: i32,
     mouse_y: i32,
     fb_vaddr: u64,
-    trail: [(i32, i32); 4],
-    trail_len: usize,
+    saved_bg: [u8; 16 * 16 * 4],
+    cursor_x: i32,
+    cursor_y: i32,
+    cursor_drawn: bool,
 }
 
 pub fn setup(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) -> Option<Ps2> {
@@ -159,7 +161,7 @@ pub fn setup(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) 
         has_mouse, kb_extended: false,
         mouse_packet: [0; 3], mouse_idx: 0,
         mouse_x: SCREEN_W / 2, mouse_y: SCREEN_H / 2,
-        fb_vaddr, trail: [(-1, -1); 4], trail_len: 0,
+        fb_vaddr, saved_bg: [0; 16 * 16 * 4], cursor_x: -1, cursor_y: -1, cursor_drawn: false,
     })
 }
 
@@ -255,46 +257,83 @@ impl Ps2 {
 
     fn draw_cursor(&mut self) {
         if self.fb_vaddr == 0 { return; }
+        let vga = self.fb_vaddr as *mut u8;
 
-        // Erase oldest trail (only pixels still matching SMOKE color)
-        if self.trail_len == 4 {
-            let (ox, oy) = self.trail[0];
-            if ox >= 0 { erase_smoke(self.fb_vaddr, ox as usize, oy as usize); }
-            self.trail[0] = self.trail[1];
-            self.trail[1] = self.trail[2];
-            self.trail[2] = self.trail[3];
-            self.trail_len = 3;
-        }
-
-        // XOR-erase old head (including iris if it was hovering)
-        if self.trail_len > 0 {
-            let i = self.trail_len - 1;
-            let (ox, oy) = self.trail[i];
-            if ox >= 0 {
-                let ou = oy as usize;
-                let ox_u = ox as usize;
-                if ou >= 448 && ((ox_u >= 8 && ox_u < 88) || (ox_u >= 96 && ox_u < 176) ||
-                   (ox_u >= 184 && ox_u < 264) || (ox_u >= 272 && ox_u < 336) || (ox_u >= 344 && ox_u < 408)) {
-                    xor_iris(self.fb_vaddr, ox_u, ou);
+        // 1. Restore saved background at old position
+        if self.cursor_drawn {
+            let ox = self.cursor_x as usize;
+            let oy = self.cursor_y as usize;
+            for dy in 0..CURSOR_SIZE {
+                for dx in 0..CURSOR_SIZE {
+                    let sx = ox + dx;
+                    let sy = oy + dy;
+                    if sx < SCREEN_W as usize && sy < SCREEN_H as usize {
+                        let off = (sy * SCREEN_W as usize + sx) * 4;
+                        let si = (dy * CURSOR_SIZE + dx) * 4;
+                        unsafe {
+                            *vga.add(off) = self.saved_bg[si];
+                            *vga.add(off + 1) = self.saved_bg[si + 1];
+                            *vga.add(off + 2) = self.saved_bg[si + 2];
+                            *vga.add(off + 3) = self.saved_bg[si + 3];
+                        }
+                    }
                 }
-                xor_cursor(self.fb_vaddr, ox_u, ou);
             }
-            if ox >= 0 { stamp_smoke(self.fb_vaddr, ox as usize, oy as usize); }
         }
 
-        // XOR-draw new head
+        // 2. Save background at new position
         let nx = self.mouse_x as usize;
         let ny = self.mouse_y as usize;
-        xor_cursor(self.fb_vaddr, nx, ny);
-
-        // XOR the iris when hovering over a button (double-inverts the center)
-        if ny >= 448 && ((nx >= 8 && nx < 88) || (nx >= 96 && nx < 176) ||
-           (nx >= 184 && nx < 264) || (nx >= 272 && nx < 336) || (nx >= 344 && nx < 408)) {
-            xor_iris(self.fb_vaddr, nx, ny);
+        for dy in 0..CURSOR_SIZE {
+            for dx in 0..CURSOR_SIZE {
+                let sx = nx + dx;
+                let sy = ny + dy;
+                let si = (dy * CURSOR_SIZE + dx) * 4;
+                if sx < SCREEN_W as usize && sy < SCREEN_H as usize {
+                    let off = (sy * SCREEN_W as usize + sx) * 4;
+                    unsafe {
+                        self.saved_bg[si] = *vga.add(off);
+                        self.saved_bg[si + 1] = *vga.add(off + 1);
+                        self.saved_bg[si + 2] = *vga.add(off + 2);
+                        self.saved_bg[si + 3] = *vga.add(off + 3);
+                    }
+                } else {
+                    self.saved_bg[si] = 30;
+                    self.saved_bg[si + 1] = 30;
+                    self.saved_bg[si + 2] = 30;
+                    self.saved_bg[si + 3] = 0xFF;
+                }
+            }
         }
 
-        self.trail[self.trail_len] = (nx as i32, ny as i32);
-        self.trail_len += 1;
+        // 3. Draw cursor — ring + iris
+        let over_button = ny >= 448 && ((nx >= 8 && nx < 88) || (nx >= 96 && nx < 176) ||
+            (nx >= 184 && nx < 264) || (nx >= 272 && nx < 336) || (nx >= 344 && nx < 408));
+        let (ir, ig, ib) = if over_button {
+            (50u8, 255u8, 100u8) // bright green = go
+        } else {
+            (80, 160, 255) // blue
+        };
+
+        for dy in 0..CURSOR_SIZE {
+            for dx in 0..CURSOR_SIZE {
+                let sx = nx + dx;
+                let sy = ny + dy;
+                if sx >= SCREEN_W as usize || sy >= SCREEN_H as usize { continue; }
+                let off = (sy * SCREEN_W as usize + sx) * 4;
+                let is_iris = (CURSOR_SHAPE[dy] & (0x8000 >> dx)) != 0;
+                let is_ring = (CURSOR_BORDER[dy] & (0x8000 >> dx)) != 0;
+                if is_iris {
+                    unsafe { *vga.add(off) = ib; *vga.add(off+1) = ig; *vga.add(off+2) = ir; }
+                } else if is_ring {
+                    unsafe { *vga.add(off) = 255; *vga.add(off+1) = 255; *vga.add(off+2) = 255; }
+                }
+            }
+        }
+
+        self.cursor_x = nx as i32;
+        self.cursor_y = ny as i32;
+        self.cursor_drawn = true;
     }
 }
 
@@ -346,6 +385,46 @@ fn erase_smoke(fb_vaddr: u64, cx: usize, cy: usize) {
                         *vga.add(off + 1) = BG_G;
                         *vga.add(off + 2) = BG_R;
                     }
+                }
+            }
+        }
+    }
+}
+
+fn erase_iris(fb_vaddr: u64, cx: usize, cy: usize) {
+    let vga = fb_vaddr as *mut u8;
+    for dy in 0..CURSOR_SIZE {
+        let shape = CURSOR_SHAPE[dy];
+        for dx in 0..CURSOR_SIZE {
+            if (shape & (0x8000 >> dx)) == 0 { continue; }
+            let sx = cx + dx;
+            let sy = cy + dy;
+            if sx < SCREEN_W as usize && sy < SCREEN_H as usize {
+                let off = (sy * SCREEN_W as usize + sx) * 4;
+                unsafe {
+                    *vga.add(off) = BG_B;
+                    *vga.add(off + 1) = BG_G;
+                    *vga.add(off + 2) = BG_R;
+                }
+            }
+        }
+    }
+}
+
+fn solid_iris(fb_vaddr: u64, cx: usize, cy: usize, r: u8, g: u8, b: u8) {
+    let vga = fb_vaddr as *mut u8;
+    for dy in 0..CURSOR_SIZE {
+        let shape = CURSOR_SHAPE[dy];
+        for dx in 0..CURSOR_SIZE {
+            if (shape & (0x8000 >> dx)) == 0 { continue; }
+            let sx = cx + dx;
+            let sy = cy + dy;
+            if sx < SCREEN_W as usize && sy < SCREEN_H as usize {
+                let off = (sy * SCREEN_W as usize + sx) * 4;
+                unsafe {
+                    *vga.add(off) = b;
+                    *vga.add(off + 1) = g;
+                    *vga.add(off + 2) = r;
                 }
             }
         }
@@ -429,35 +508,37 @@ fn erase_cursor_black(fb_vaddr: u64, cx: usize, cy: usize) {
 }
 
 const CURSOR_SIZE: usize = 16;
+// SHAPE = iris only (filled center dot)
 const CURSOR_SHAPE: [u16; 16] = [
     0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000001110000000,
     0b0000011111000000,
-    0b0001100000110000,
-    0b0010000000001000,
-    0b0100000000000100,
-    0b0100000000000100,
-    0b1000000100000010,
-    0b1000001110000010,
-    0b1000000100000010,
-    0b0100000000000100,
-    0b0100000000000100,
-    0b0010000000001000,
-    0b0001100000110000,
+    0b0000111111100000,
+    0b0000111111100000,
+    0b0000111111100000,
     0b0000011111000000,
+    0b0000001110000000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000,
     0b0000000000000000,
     0b0000000000000000,
 ];
+// BORDER with SHAPE pixels removed (no overlap)
 const CURSOR_BORDER: [u16; 16] = [
     0b0000011111000000,
     0b0001111111110000,
     0b0011100000111000,
     0b0110000000001100,
     0b1100000000000110,
-    0b1100000100000110,
-    0b1000001110000010,
-    0b1000011111000010,
-    0b1000001110000010,
-    0b1100000100000110,
+    0b1100000000000110,
+    0b1000000000000010,
+    0b1000000000000010,
+    0b1000000000000010,
+    0b1100000000000110,
     0b1100000000000110,
     0b0110000000001100,
     0b0011100000111000,
