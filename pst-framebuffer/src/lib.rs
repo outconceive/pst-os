@@ -187,12 +187,21 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
                 return card_y + card_h + 8;
             }
 
-            // Row
+            // Row — horizontal layout
             if class.contains("mc-row") {
+                let mut cx = x;
+                let mut max_h = GLYPH_HEIGHT;
                 for child in &el.children {
-                    cy = render_vnode(fb, child, x, cy, bg, fg);
+                    let (w, h) = render_vnode_inline(fb, child, cx, cy, bg, fg);
+                    cx += w + 4;
+                    if h > max_h { max_h = h; }
                 }
-                return cy + 2;
+                return cy + max_h + 2;
+            }
+
+            // Spacer — vertical gap
+            if class.contains("mc-spacer") {
+                return cy + 16;
             }
 
             // Input (text)
@@ -288,6 +297,205 @@ fn render_vnode(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Colo
                 cy += 2;
             }
             cy
+        }
+    }
+}
+
+fn render_vnode_inline(fb: &mut Framebuffer, node: &VNode, x: usize, y: usize, bg: Color, fg: Color) -> (usize, usize) {
+    match node {
+        VNode::Text(t) => {
+            let text = t.content.trim();
+            if !text.is_empty() {
+                fb.draw_text_transparent(x, y + 4, text, fg);
+            }
+            (text.len() * GLYPH_WIDTH, GLYPH_HEIGHT)
+        }
+        VNode::Element(el) => {
+            let class = el.attrs.get("class").map(|s| s.as_str()).unwrap_or("");
+
+            if class.contains("mc-input") && !class.contains("mc-input-password") {
+                let fw = 200;
+                let fh = 22;
+                let tab_w = 5;
+                fb.fill_rect(x, y, fw, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, y, tab_w, fh, Color::rgb(59, 130, 246));
+                fb.fill_rect(x, y, tab_w, 1, Color::rgb(99, 170, 255));
+                fb.draw_hline(x, y, fw, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, y + fh - 1, fw, Color::rgb(40, 40, 45));
+                return (fw, fh);
+            }
+
+            if class.contains("mc-input-password") {
+                let fw = 200;
+                let fh = 22;
+                let tab_w = 5;
+                fb.fill_rect(x, y, fw, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, y, tab_w, fh, Color::rgb(239, 68, 68));
+                fb.fill_rect(x, y, tab_w, 1, Color::rgb(255, 108, 108));
+                fb.draw_hline(x, y, fw, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, y + fh - 1, fw, Color::rgb(40, 40, 45));
+                return (fw, fh);
+            }
+
+            if class.contains("mc-checkbox") {
+                let fh = 22;
+                let tab_w = 5;
+                fb.fill_rect(x, y, 22, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, y, tab_w, fh, Color::rgb(16, 185, 129));
+                fb.fill_rect(x, y, tab_w, 1, Color::rgb(56, 225, 169));
+                fb.draw_hline(x, y, 22, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, y + fh - 1, 22, Color::rgb(40, 40, 45));
+                fb.fill_rect(x + tab_w + 3, y + 3, 14, 14, Color::rgb(40, 40, 45));
+                fb.draw_hline(x + tab_w + 3, y + 3, 14, Color::rgb(70, 70, 75));
+                return (22, fh);
+            }
+
+            if class.contains("mc-button") {
+                let label = text_content(node);
+                let w = label.len() * GLYPH_WIDTH + 24;
+                let h = GLYPH_HEIGHT + 12;
+                let btn_color = if class.contains("mc-primary") {
+                    Color::rgb(59, 130, 246)
+                } else if class.contains("mc-danger") {
+                    Color::rgb(239, 68, 68)
+                } else {
+                    Color::rgb(59, 130, 246)
+                };
+                fb.fill_rect(x, y, w, h, btn_color);
+                fb.draw_hline(x, y, w, Color::rgb(
+                    btn_color.r.saturating_add(40), btn_color.g.saturating_add(40), btn_color.b.saturating_add(40)));
+                fb.draw_hline(x, y + h - 1, w, Color::rgb(
+                    btn_color.r.saturating_sub(30), btn_color.g.saturating_sub(30), btn_color.b.saturating_sub(30)));
+                fb.draw_text(x + 12, y + 6, &label, Color::WHITE, btn_color);
+                return (w, h);
+            }
+
+            if class.contains("mc-label") {
+                let content = text_content(node);
+                fb.draw_text_transparent(x, y + 4, &content, fg);
+                return (content.len() * GLYPH_WIDTH, GLYPH_HEIGHT);
+            }
+
+            if class.contains("mc-radio") {
+                let fh = 22;
+                let tab_w = 5;
+                fb.fill_rect(x, y, 22, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, y, tab_w, fh, Color::rgb(168, 85, 247));
+                fb.fill_rect(x, y, tab_w, 1, Color::rgb(208, 125, 255));
+                fb.draw_hline(x, y, 22, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, y + fh - 1, 22, Color::rgb(40, 40, 45));
+                // Circle outline
+                for dx in 2..12 { fb.set_pixel(x + tab_w + 3 + dx, y + 4, Color::rgb(100, 100, 110)); }
+                for dx in 2..12 { fb.set_pixel(x + tab_w + 3 + dx, y + 17, Color::rgb(100, 100, 110)); }
+                return (22, fh);
+            }
+
+            if class.contains("mc-select") {
+                let fw = 160;
+                let fh = 22;
+                let tab_w = 5;
+                fb.fill_rect(x, y, fw, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, y, tab_w, fh, Color::rgb(245, 158, 11));
+                fb.fill_rect(x, y, tab_w, 1, Color::rgb(255, 198, 51));
+                fb.draw_hline(x, y, fw, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, y + fh - 1, fw, Color::rgb(40, 40, 45));
+                // Down arrow
+                fb.draw_text(x + fw - 16, y + 5, "v", Color::rgb(150, 150, 150), Color::rgb(50, 50, 55));
+                return (fw, fh);
+            }
+
+            if class.contains("mc-textarea") {
+                let fw = 250;
+                let fh = 60;
+                let tab_w = 5;
+                fb.fill_rect(x, y, fw, fh, Color::rgb(50, 50, 55));
+                fb.fill_rect(x, y, tab_w, fh, Color::rgb(59, 130, 246));
+                fb.fill_rect(x, y, tab_w, 1, Color::rgb(99, 170, 255));
+                fb.draw_hline(x, y, fw, Color::rgb(70, 70, 75));
+                fb.draw_hline(x, y + fh - 1, fw, Color::rgb(40, 40, 45));
+                return (fw, fh);
+            }
+
+            if class.contains("mc-image") {
+                let fw = 64;
+                let fh = 48;
+                fb.fill_rect(x, y, fw, fh, Color::rgb(60, 60, 65));
+                fb.draw_hline(x, y, fw, Color::rgb(80, 80, 85));
+                fb.draw_hline(x, y + fh - 1, fw, Color::rgb(40, 40, 45));
+                fb.draw_text(x + 16, y + 18, "IMG", Color::rgb(100, 100, 110), Color::rgb(60, 60, 65));
+                return (fw, fh);
+            }
+
+            if class.contains("mc-link") {
+                let label = text_content(node);
+                fb.draw_text_transparent(x, y + 4, &label, Color::rgb(96, 165, 250));
+                // Underline
+                fb.draw_hline(x, y + 4 + GLYPH_HEIGHT, label.len() * GLYPH_WIDTH, Color::rgb(96, 165, 250));
+                return (label.len() * GLYPH_WIDTH, GLYPH_HEIGHT + 2);
+            }
+
+            if class.contains("mc-pill") {
+                let label = text_content(node);
+                let pw = label.len() * GLYPH_WIDTH + 12;
+                let ph = GLYPH_HEIGHT + 6;
+                fb.fill_rect(x, y, pw, ph, Color::rgb(55, 65, 81));
+                fb.draw_hline(x, y, pw, Color::rgb(75, 85, 101));
+                fb.draw_text(x + 6, y + 3, &label, Color::rgb(200, 200, 210), Color::rgb(55, 65, 81));
+                return (pw, ph);
+            }
+
+            if class.contains("mc-badge") {
+                let label = text_content(node);
+                let bw = label.len() * GLYPH_WIDTH + 8;
+                let bh = GLYPH_HEIGHT + 4;
+                fb.fill_rect(x, y, bw, bh, Color::rgb(239, 68, 68));
+                fb.draw_text(x + 4, y + 2, &label, Color::WHITE, Color::rgb(239, 68, 68));
+                return (bw, bh);
+            }
+
+            if class.contains("mc-progress") {
+                let label = text_content(node);
+                let pct: usize = label.trim().parse().unwrap_or(50);
+                let pw = 200;
+                let ph = 12;
+                fb.fill_rect(x, y + 4, pw, ph, Color::rgb(40, 40, 45));
+                let fill_w = (pw * pct) / 100;
+                fb.fill_rect(x, y + 4, fill_w, ph, Color::rgb(59, 130, 246));
+                fb.draw_hline(x, y + 4, pw, Color::rgb(60, 60, 65));
+                return (pw, ph + 8);
+            }
+
+            if class.contains("mc-sparkline") {
+                let sw = 80;
+                let sh = 20;
+                fb.fill_rect(x, y, sw, sh, Color::rgb(40, 40, 45));
+                // Placeholder zigzag
+                for i in 0..sw {
+                    let py = y + sh / 2 + ((i * 7) % sh).min(sh - 2) - sh / 4;
+                    fb.set_pixel(x + i, py, Color::rgb(16, 185, 129));
+                }
+                return (sw, sh);
+            }
+
+            if class.contains("mc-spacer") {
+                return (8, 0);
+            }
+
+            if class.contains("mc-divider") {
+                let w = fb.width.saturating_sub(x * 2);
+                fb.draw_hline(x, y + 4, w, Color::GRAY);
+                return (w, 12);
+            }
+
+            // Generic: render children inline
+            let mut cx = x;
+            let mut max_h = 0;
+            for child in &el.children {
+                let (cw, ch) = render_vnode_inline(fb, child, cx, y, bg, fg);
+                cx += cw + 4;
+                if ch > max_h { max_h = ch; }
+            }
+            (cx - x, max_h)
         }
     }
 }

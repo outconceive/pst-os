@@ -3,14 +3,23 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-// Component type characters
+// Component type characters (matches Outconceive UI)
 pub const LABEL: char         = 'L';
 pub const TEXT_INPUT: char    = 'I';
 pub const PASSWORD: char      = 'P';
 pub const BUTTON: char        = 'B';
 pub const CHECKBOX: char      = 'C';
+pub const RADIO: char         = 'R';
+pub const SELECT: char        = 'S';
+pub const TEXTAREA: char      = 'T';
+pub const IMAGE: char         = 'G';
+pub const LINK: char          = 'K';
 pub const DIVIDER: char       = 'D';
 pub const SPACER: char        = '_';
+pub const PILL: char          = 'W';
+pub const BADGE: char         = 'J';
+pub const PROGRESS: char      = 'Q';
+pub const SPARKLINE: char     = 'Z';
 pub const EMPTY: char         = ' ';
 
 #[derive(Debug, Clone)]
@@ -217,9 +226,18 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
         "password" => PASSWORD,
         "button" => BUTTON,
         "checkbox" => CHECKBOX,
+        "radio" => RADIO,
+        "select" => SELECT,
+        "textarea" => TEXTAREA,
+        "image" => IMAGE,
+        "link" => LINK,
         "label" => LABEL,
         "divider" => DIVIDER,
         "spacer" => SPACER,
+        "pill" => PILL,
+        "badge" => BADGE,
+        "progress" => PROGRESS,
+        "sparkline" => SPARKLINE,
         _ => LABEL,
     };
 
@@ -239,8 +257,16 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
 
     let default_width = match comp_char {
         TEXT_INPUT | PASSWORD => 10,
+        TEXTAREA => 20,
         BUTTON => label.len().max(6),
-        CHECKBOX => 3,
+        CHECKBOX | RADIO => 3,
+        SELECT => 12,
+        IMAGE => 8,
+        LINK => label.len().max(4),
+        PILL => label.len().max(3),
+        BADGE => label.len().max(2),
+        PROGRESS => 15,
+        SPARKLINE => 10,
         DIVIDER => 1,
         SPACER => 1,
         _ => label.len().max(binding.as_ref().map(|b| b.len()).unwrap_or(1)),

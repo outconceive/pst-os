@@ -119,6 +119,39 @@ fn render_line(line: &Line) -> VNode {
                     attrs.insert(String::from("type"), String::from("checkbox"));
                     children.push(VNode::element_with_attrs("input", attrs, Vec::new()));
                 }
+                parse::RADIO => {
+                    attrs.insert(String::from("type"), String::from("radio"));
+                    children.push(VNode::element_with_attrs("input", attrs, Vec::new()));
+                }
+                parse::SELECT => {
+                    children.push(VNode::element_with_attrs("select", attrs, vec![VNode::text(span_content.trim())]));
+                }
+                parse::TEXTAREA => {
+                    children.push(VNode::element_with_attrs("textarea", attrs, Vec::new()));
+                }
+                parse::IMAGE => {
+                    let src = span_content.trim();
+                    if !src.is_empty() { attrs.insert(String::from("src"), String::from(src)); }
+                    children.push(VNode::element_with_attrs("img", attrs, Vec::new()));
+                }
+                parse::LINK => {
+                    let label = span_content.trim();
+                    children.push(VNode::element_with_attrs("a", attrs, vec![VNode::text(label)]));
+                }
+                parse::PILL => {
+                    let label = span_content.trim();
+                    children.push(VNode::element_with_attrs("span", attrs, vec![VNode::text(label)]));
+                }
+                parse::BADGE => {
+                    let label = span_content.trim();
+                    children.push(VNode::element_with_attrs("span", attrs, vec![VNode::text(label)]));
+                }
+                parse::PROGRESS => {
+                    children.push(VNode::element_with_attrs("div", attrs, vec![VNode::text(span_content.trim())]));
+                }
+                parse::SPARKLINE => {
+                    children.push(VNode::element_with_attrs("svg", attrs, Vec::new()));
+                }
                 parse::DIVIDER => {
                     children.push(VNode::element_with_attrs("hr", attrs, Vec::new()));
                 }
@@ -341,8 +374,17 @@ fn css_class(comp: char) -> String {
         parse::PASSWORD => "mc-input-password",
         parse::BUTTON => "mc-button",
         parse::CHECKBOX => "mc-checkbox",
+        parse::RADIO => "mc-radio",
+        parse::SELECT => "mc-select",
+        parse::TEXTAREA => "mc-textarea",
+        parse::IMAGE => "mc-image",
+        parse::LINK => "mc-link",
         parse::DIVIDER => "mc-divider",
         parse::SPACER => "mc-spacer",
+        parse::PILL => "mc-pill",
+        parse::BADGE => "mc-badge",
+        parse::PROGRESS => "mc-progress",
+        parse::SPARKLINE => "mc-sparkline",
         _ => "mc-label",
     })
 }

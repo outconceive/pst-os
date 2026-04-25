@@ -100,6 +100,100 @@ fn render_node(out: &mut String, node: &VNode, ctx: &mut RenderCtx) {
                 return;
             }
 
+            if class.contains("mc-radio") {
+                out.push_str("( ) ");
+                ctx.col += 4;
+                return;
+            }
+
+            if class.contains("mc-select") {
+                out.push_str(ansi::DIM);
+                out.push_str("[______ v]");
+                out.push_str(ansi::RESET);
+                ctx.col += 10;
+                return;
+            }
+
+            if class.contains("mc-textarea") {
+                out.push_str(ansi::DIM);
+                out.push_str("[");
+                for _ in 0..24 { out.push('_'); }
+                out.push_str("]\r\n");
+                pad_indent(out, ctx);
+                out.push_str("[");
+                for _ in 0..24 { out.push('_'); }
+                out.push(']');
+                out.push_str(ansi::RESET);
+                ctx.col += 26;
+                return;
+            }
+
+            if class.contains("mc-link") {
+                let label = text_content(node);
+                out.push_str("\x1b[4;34m"); // underline + blue
+                out.push_str(label.trim());
+                out.push_str(ansi::RESET);
+                ctx.col += label.trim().len();
+                return;
+            }
+
+            if class.contains("mc-image") {
+                out.push_str(ansi::DIM);
+                out.push_str("[img]");
+                out.push_str(ansi::RESET);
+                ctx.col += 5;
+                return;
+            }
+
+            if class.contains("mc-pill") {
+                let label = text_content(node);
+                out.push_str(&ansi::bg(55, 65, 81));
+                out.push(' ');
+                out.push_str(label.trim());
+                out.push(' ');
+                out.push_str(ansi::RESET);
+                ctx.col += label.trim().len() + 2;
+                return;
+            }
+
+            if class.contains("mc-badge") {
+                let label = text_content(node);
+                out.push_str(&ansi::bg(239, 68, 68));
+                out.push_str(&ansi::fg(255, 255, 255));
+                out.push_str(label.trim());
+                out.push_str(ansi::RESET);
+                ctx.col += label.trim().len();
+                return;
+            }
+
+            if class.contains("mc-progress") {
+                let label = text_content(node);
+                let pct: usize = label.trim().parse().unwrap_or(50);
+                let bar_w = 20;
+                let filled = (bar_w * pct) / 100;
+                out.push('[');
+                for i in 0..bar_w {
+                    if i < filled { out.push_str("█"); } else { out.push_str("░"); }
+                }
+                out.push(']');
+                ctx.col += bar_w + 2;
+                return;
+            }
+
+            if class.contains("mc-sparkline") {
+                out.push_str(ansi::DIM);
+                out.push_str("▁▃▅▇▅▃▁▂▄▆");
+                out.push_str(ansi::RESET);
+                ctx.col += 11;
+                return;
+            }
+
+            if class.contains("mc-spacer") {
+                out.push_str("  ");
+                ctx.col += 2;
+                return;
+            }
+
             if class.contains("mc-divider") {
                 pad_indent(out, ctx);
                 let w = ctx.cols.saturating_sub(ctx.indent * 2);
