@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::format;
 
-use crate::keyboard::{self, Keyboard};
+use crate::ps2::{self, Ps2, InputEvent};
 use crate::serial_print;
 use crate::storage::Storage;
 use crate::codeview::CodeView;
@@ -61,7 +61,7 @@ const DEMO_OUTPUT: &[&str] = &[
     "PST OS ready.",
 ];
 
-pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net::VirtioNet>, fb_vaddr: u64) {
+pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net::VirtioNet>, fb_vaddr: u64) {
     let mut windows = Vec::new();
 
     let restored = store.as_mut().and_then(|s| s.load_desktop());
@@ -89,21 +89,34 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
     print_prompt(&windows[focused]);
 
     loop {
-        let ch = kb.read_key();
+        let event = ps2.read_event();
+
+        let ch = match event {
+            InputEvent::Key(k) => k,
+            InputEvent::Click { x, y } => {
+                // Click on a window — focus it based on y position
+                let row = y / pst_framebuffer::font::GLYPH_HEIGHT;
+                // Status bar is rows 0-3, then each window ~5 rows
+                // Simple: just re-render on click for now
+                serial_print("[click] ");
+                crate::serial_print_num(x);
+                serial_print(",");
+                crate::serial_print_num(y);
+                serial_print("\n");
+                render_desktop(&windows, focused, fb_vaddr);
+                print_prompt(&windows[focused]);
+                continue;
+            }
+            InputEvent::MouseMove { .. } => continue,
+        };
 
         // Editor mode
         if let Some(ref mut ed) = editor {
             match ed.handle_key(ch) {
-                EditorAction::Continue => {
-                    serial_print(&ed.render());
-                }
+                EditorAction::Continue => { serial_print(&ed.render()); }
                 EditorAction::Save => {
-                    if let Some(ref mut s) = store {
-                        save_file(s, &ed.filename, &ed.to_text());
-                    }
-                    serial_print("[editor] Saved ");
-                    serial_print(&ed.filename);
-                    serial_print("\n");
+                    if let Some(ref mut s) = store { save_file(s, &ed.filename, &ed.to_text()); }
+                    serial_print("[editor] Saved "); serial_print(&ed.filename); serial_print("\n");
                     editor = None;
                     render_desktop(&windows, focused, fb_vaddr);
                     print_prompt(&windows[focused]);
@@ -125,49 +138,21 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
                     render_desktop(&windows, focused, fb_vaddr);
                     print_prompt(&windows[focused]);
                 }
-                keyboard::KEY_DOWN | b'j' => {
-                    cv.step_forward();
-                    serial_print(&cv.render());
-                }
-                keyboard::KEY_UP | b'k' => {
-                    cv.step_back();
-                    serial_print(&cv.render());
-                }
+                ps2::KEY_DOWN | b'j' => { cv.step_forward(); serial_print(&cv.render()); }
+                ps2::KEY_UP | b'k' => { cv.step_back(); serial_print(&cv.render()); }
                 _ => {}
             }
             continue;
         }
 
         // F1=editor  F2=markout  F3=browser  F4=code  F5=convergence
-        if ch == keyboard::KEY_F1 {
-            let ed = Editor::new("untitled.txt");
-            serial_print(&ed.render());
-            editor = Some(ed);
-            continue;
-        }
-        if ch == keyboard::KEY_F2 {
-            let ed = Editor::new("untitled.md");
-            serial_print(&ed.render());
-            editor = Some(ed);
-            continue;
-        }
-        if ch == keyboard::KEY_F3 {
-            browser::run(kb, &mut store, &mut net);
-            render_desktop(&windows, focused, fb_vaddr);
-            print_prompt(&windows[focused]);
-            continue;
-        }
-        if ch == keyboard::KEY_F4 {
-            let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT);
-            serial_print(&cv.render());
-            codeview = Some(cv);
-            continue;
-        }
-        if ch == keyboard::KEY_F5 {
-            convergence::run(kb);
-            render_desktop(&windows, focused, fb_vaddr);
-            print_prompt(&windows[focused]);
-            continue;
+        match ch {
+            ps2::KEY_F1 => { let ed = Editor::new("untitled.txt"); serial_print(&ed.render()); editor = Some(ed); continue; }
+            ps2::KEY_F2 => { let ed = Editor::new("untitled.md"); serial_print(&ed.render()); editor = Some(ed); continue; }
+            ps2::KEY_F3 => { browser::run_with_ps2(ps2, &mut store, &mut net); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
+            ps2::KEY_F4 => { let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT); serial_print(&cv.render()); codeview = Some(cv); continue; }
+            ps2::KEY_F5 => { convergence::run_with_ps2(ps2); render_desktop(&windows, focused, fb_vaddr); print_prompt(&windows[focused]); continue; }
+            _ => {}
         }
 
         if ch == b'\t' {
@@ -180,11 +165,8 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
         if ch == 0x1B {
             if let Some(ref mut s) = store {
                 let snapshot: Vec<(String, Vec<String>)> = windows.iter()
-                    .map(|w| (w.title.clone(), w.doc.clone()))
-                    .collect();
+                    .map(|w| (w.title.clone(), w.doc.clone())).collect();
                 s.save_desktop(&snapshot);
-            } else {
-                serial_print("[desktop] No storage device\n");
             }
             continue;
         }
@@ -193,26 +175,16 @@ pub fn run(kb: &Keyboard, mut store: Option<Storage>, mut net: Option<crate::net
 
         if ch == b'\n' {
             serial_print("\n");
-
             if win.line.is_empty() {
-                if !win.doc.is_empty() {
-                    win.doc.clear();
-                }
-                render_desktop(&windows, focused, fb_vaddr);
-                print_prompt(&windows[focused]);
-                continue;
+                if !win.doc.is_empty() { win.doc.clear(); }
+            } else {
+                win.doc.push(win.line.clone());
+                win.line.clear();
             }
-
-            win.doc.push(win.line.clone());
-            win.line.clear();
-
             render_desktop(&windows, focused, fb_vaddr);
             print_prompt(&windows[focused]);
         } else if ch == 0x08 {
-            if !win.line.is_empty() {
-                win.line.pop();
-                serial_print("\x08 \x08");
-            }
+            if !win.line.is_empty() { win.line.pop(); serial_print("\x08 \x08"); }
         } else if ch < 0x80 {
             win.line.push(ch as char);
             unsafe { crate::debug_putchar(ch) };

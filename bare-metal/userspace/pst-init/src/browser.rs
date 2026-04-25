@@ -56,7 +56,12 @@ const ABOUT_PAGE: &str = "\
 | Markout all the way down.
 @end card";
 
-pub fn run(kb: &Keyboard, store: &mut Option<Storage>, net: &mut Option<VirtioNet>) -> BrowserAction {
+pub fn run_with_ps2(ps2: &mut crate::ps2::Ps2, store: &mut Option<Storage>, net: &mut Option<VirtioNet>) -> BrowserAction {
+    // Adapter: read keys from ps2
+    run_inner(|| { match ps2.read_event() { crate::ps2::InputEvent::Key(k) => k, _ => 0 } }, store, net)
+}
+
+fn run_inner(mut read_key: impl FnMut() -> u8, store: &mut Option<Storage>, net: &mut Option<VirtioNet>) -> BrowserAction {
     if let Some(ref mut s) = store {
         if s.load_file("/pst/index.md").is_none() {
             s.save_file("/pst/index.md", DEFAULT_INDEX);
@@ -73,7 +78,7 @@ pub fn run(kb: &Keyboard, store: &mut Option<Storage>, net: &mut Option<VirtioNe
     navigate(store, net, &url, &mut history);
 
     loop {
-        let ch = kb.read_key();
+        let ch = read_key();
 
         match ch {
             b'q' => return BrowserAction::Quit,
@@ -91,7 +96,7 @@ pub fn run(kb: &Keyboard, store: &mut Option<Storage>, net: &mut Option<VirtioNe
                 serial_print("\r\n\x1b[7m URL: \x1b[0m ");
                 url_input.clear();
                 loop {
-                    let c = kb.read_key();
+                    let c = read_key();
                     if c == b'\n' { serial_print("\n"); break; }
                     else if c == 0x08 {
                         if !url_input.is_empty() { url_input.pop(); serial_print("\x08 \x08"); }

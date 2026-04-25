@@ -17,6 +17,7 @@ mod convergence;
 mod vgacon;
 mod mouse;
 mod input;
+mod ps2;
 mod net;
 mod rng;
 
@@ -285,12 +286,8 @@ pub extern "C" fn main(_bootinfo: *const seL4_BootInfo) -> ! {
                 serial_print("  The thesis is proven.\n");
                 serial_print("========================================\n\n");
 
-                if let Some(kb) = keyboard::setup(bi_ptr, next_slot) {
-                    let mouse_dev = mouse::setup(bi_ptr, kb.port_cap(), next_slot + 20, vga_state.fb_vaddr);
-                    if mouse_dev.is_some() {
-                        serial_print("[mouse] Mouse available\n");
-                    }
-                    desktop::run(&kb, store, net_dev, vga_state.fb_vaddr);
+                if let Some(mut ps2_dev) = ps2::setup(bi_ptr, next_slot, vga_state.fb_vaddr) {
+                    desktop::run(&mut ps2_dev, store, net_dev, vga_state.fb_vaddr);
                 }
             }
         } else {

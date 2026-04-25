@@ -1,6 +1,5 @@
 use alloc::string::String;
 use crate::serial_print;
-use crate::keyboard::{self, Keyboard};
 
 const CONVERGENCE_DOC: &str = "\
 @card
@@ -30,7 +29,7 @@ const CONVERGENCE_DOC: &str = "\
 | Different renderer. Same result.
 @end card";
 
-pub fn run(kb: &Keyboard) {
+pub fn run_with_ps2(ps2: &mut crate::ps2::Ps2) {
     // Render via pst-terminal (ANSI to serial)
     serial_print("\x1b[2J\x1b[H");
     serial_print("\x1b[1;33m");
@@ -76,5 +75,5 @@ pub fn run(kb: &Keyboard) {
     serial_print("  \x1b[1;32mThe web framework and the OS are the same thing.\x1b[0m\n\n");
 
     serial_print("\x1b[2m  Press any key to return\x1b[0m\n");
-    kb.read_key();
+    ps2.read_event();
 }
