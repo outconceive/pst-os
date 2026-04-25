@@ -42,7 +42,7 @@ pub fn init(bootinfo: *const seL4_BootInfo) -> Option<VgaState> {
     }
     serial_print("[vga] PCI port cap OK\n");
 
-    // --- Step 2: Probe PCI for VGA device, read BAR0 ---
+    // --- Step 2: Probe PCI for VGA device, find MMIO BAR ---
     serial_print("[vga] Scanning PCI bus...\n");
     let mut vga_bar: u64 = 0;
 
@@ -52,23 +52,39 @@ pub fn init(bootinfo: *const seL4_BootInfo) -> Option<VgaState> {
         let id = unsafe { native::sel4_ioport_in32(pci_cap, 0xCFC) };
         if id == 0xFFFF_FFFF || id == 0 { continue; }
 
-        // Read class code at offset 0x08
         unsafe { native::sel4_ioport_out32(pci_cap, 0xCF8, addr | 0x08); }
         let class_word = unsafe { native::sel4_ioport_in32(pci_cap, 0xCFC) };
         let class_code = (class_word >> 24) & 0xFF;
 
-        // VGA compatible controller: class 0x03
         if class_code == 0x03 {
-            // Read BAR0 at offset 0x10
-            unsafe { native::sel4_ioport_out32(pci_cap, 0xCF8, addr | 0x10); }
-            let bar0 = unsafe { native::sel4_ioport_in32(pci_cap, 0xCFC) };
-            vga_bar = (bar0 & 0xFFFFFFF0) as u64;
             serial_print("[vga] VGA at PCI slot ");
             serial_print_num(dev as usize);
-            serial_print(", BAR0=0x");
-            serial_print_hex(vga_bar);
+
+            // Scan BAR0-BAR5 for the first memory-mapped BAR (bit 0 = 0)
+            for bar_idx in 0u32..6 {
+                let bar_offset = 0x10 + bar_idx * 4;
+                unsafe { native::sel4_ioport_out32(pci_cap, 0xCF8, addr | bar_offset); }
+                let bar_val = unsafe { native::sel4_ioport_in32(pci_cap, 0xCFC) };
+
+                if bar_val == 0 { continue; }
+
+                let is_io = bar_val & 1 != 0;
+                let bar_addr = if is_io { (bar_val & 0xFFFFFFFC) as u64 } else { (bar_val & 0xFFFFFFF0) as u64 };
+
+                serial_print(", BAR");
+                serial_print_num(bar_idx as usize);
+                serial_print("=0x");
+                serial_print_hex(bar_addr);
+                serial_print(if is_io { "(io)" } else { "(mmio)" });
+
+                if !is_io && bar_addr >= 0x100000 {
+                    vga_bar = bar_addr;
+                    serial_print(" <-- using this");
+                    break;
+                }
+            }
             serial_print("\n");
-            break;
+            if vga_bar != 0 { break; }
         }
     }
 
