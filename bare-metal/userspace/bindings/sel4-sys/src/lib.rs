@@ -67,16 +67,15 @@ pub const seL4_CapTableObject: seL4_Word = 4;
 // ---------------------------------------------------------------------------
 // Object types (x86_64-specific)
 // Numbering continues from seL4_NonArchObjectTypeCount = 5.
-// CONFIG_HUGE_PAGE = 1 in kernel config inserts HugePageObject after PML4.
+// Kernel built with KernelHugePage=OFF — no HugePageObject in the enum.
 // ---------------------------------------------------------------------------
 
 pub const seL4_X86_PDPTObject: seL4_Word = 5;
 pub const seL4_X86_PML4Object: seL4_Word = 6;
-pub const seL4_X64_HugePageObject: seL4_Word = 7;    // 1 GiB huge page (CONFIG_HUGE_PAGE)
-pub const seL4_X86_4K: seL4_Word = 8;                // 4 KiB page frame
-pub const seL4_X86_LargePage: seL4_Word = 9;         // 2 MiB large page
-pub const seL4_X86_PageTableObject: seL4_Word = 10;  // page table (PT)
-pub const seL4_X86_PageDirectoryObject: seL4_Word = 11; // page directory (PD)
+pub const seL4_X86_4K: seL4_Word = 7;                // 4 KiB page frame
+pub const seL4_X86_LargePage: seL4_Word = 8;         // 2 MiB large page
+pub const seL4_X86_PageTableObject: seL4_Word = 9;   // page table (PT)
+pub const seL4_X86_PageDirectoryObject: seL4_Word = 10; // page directory (PD)
 
 // ---------------------------------------------------------------------------
 // Object size bits (log2 of the object size in bytes)

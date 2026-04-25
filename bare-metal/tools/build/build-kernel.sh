@@ -53,11 +53,12 @@ if [ ! -f "$BUILD_DIR/build.ninja" ]; then
     "$KERNEL_DIR/init-build.sh" \
         -DPLATFORM=x86_64 \
         -DSIMULATION="$SIMULATION" \
-        -DKernelDebugBuild=OFF \
-        -DKernelPrinting=OFF \
+        -DKernelDebugBuild=ON \
+        -DKernelPrinting=ON \
         -DKernelFastpath=ON \
         -DKernelRootCNodeSizeBits=19 \
         -DKernelMaxNumNodes=16 \
+        -DKernelHugePage=OFF \
         -DKernelIOMMU="$IOMMU"
 fi
 

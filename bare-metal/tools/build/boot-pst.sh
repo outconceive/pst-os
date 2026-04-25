@@ -108,7 +108,7 @@ if [ "$BUILD_ONLY" = false ]; then
         -drive file="$DISK",format=raw,if=virtio \
         -device virtio-net-pci,netdev=net0 \
         -netdev user,id=net0 \
-        -cpu qemu64,+pdpe1gb \
+        -cpu qemu64 \
         -m 2G \
         -smp 2 \
         -serial stdio \
