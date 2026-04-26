@@ -19,3 +19,4 @@ pst-blk = { path = "../../../pst-blk" }
 smoltcp = { version = "0.12", default-features = false, features = ["proto-ipv4", "socket-tcp", "socket-udp", "alloc", "medium-ethernet"] }
 proctable = { path = "../../../proctable" }
 pst-offset = { path = "../../../pst-offset" }
+pst-editor = { path = "../../../pst-editor" }

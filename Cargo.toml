@@ -17,6 +17,7 @@ members = [
     "pst-blk",
     "pst-ui",
     "pst-integration",
+    "pst-editor",
 ]
 
 [profile.release]

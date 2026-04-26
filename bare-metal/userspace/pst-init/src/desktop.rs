@@ -6,9 +6,10 @@ use crate::ps2::{self, Ps2, InputEvent};
 use crate::serial_print;
 use crate::storage::Storage;
 use crate::codeview::CodeView;
-use crate::editor::{Editor, EditorAction};
+use crate::editor;
 use crate::browser;
 use crate::convergence;
+use crate::storybook;
 
 struct Window {
     title: String,
@@ -144,7 +145,6 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
 
     let mut focused: usize = 0;
     let mut codeview: Option<CodeView> = None;
-    let mut editor: Option<Editor> = None;
 
     render_desktop(&windows, focused, fb_vaddr);
     print_prompt(&windows[focused]);
@@ -162,15 +162,19 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                 if y >= 448 {
                     // Buttons: Editor(8-88), Markout(96-176), Browser(184-264), Code(272-336), Save(344-408)
                     if x >= 8 && x < 80 {
-                        let ed = Editor::new("untitled.txt");
-                        serial_print(&ed.render());
-                        editor = Some(ed);
+                        if let Some(text) = editor::run_editor(ps2, fb_vaddr, "untitled.txt", None) {
+                            if let Some(ref mut s) = store { save_file(s, "untitled.txt", &text); }
+                        }
+                        render_desktop(&windows, focused, fb_vaddr);
                         ps2.invalidate_cursor();
+                        print_prompt(&windows[focused]);
                     } else if x >= 84 && x < 164 {
-                        let ed = Editor::new("untitled.md");
-                        serial_print(&ed.render());
-                        editor = Some(ed);
+                        if let Some(text) = editor::run_editor(ps2, fb_vaddr, "untitled.md", None) {
+                            if let Some(ref mut s) = store { save_file(s, "untitled.md", &text); }
+                        }
+                        render_desktop(&windows, focused, fb_vaddr);
                         ps2.invalidate_cursor();
+                        print_prompt(&windows[focused]);
                     } else if x >= 168 && x < 244 {
                         browser::run_with_ps2(ps2, &mut store, &mut net);
                         render_desktop(&windows, focused, fb_vaddr);
@@ -192,6 +196,11 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                                 .map(|w| (w.title.clone(), w.doc.clone())).collect();
                             s.save_desktop(&snapshot);
                         }
+                    } else if x >= 428 && x < 524 {
+                        storybook::run(ps2, fb_vaddr);
+                        render_desktop(&windows, focused, fb_vaddr);
+                        ps2.invalidate_cursor();
+                        print_prompt(&windows[focused]);
                     }
                     continue;
                 }
@@ -205,30 +214,13 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
                 }
                 continue;
             }
-            InputEvent::MouseMove { .. } => continue,
+            InputEvent::MouseMove { .. }
+            | InputEvent::MouseDown { .. }
+            | InputEvent::MouseUp { .. }
+            | InputEvent::MouseDrag { .. } => continue,
         };
 
-        // Editor mode
-        if let Some(ref mut ed) = editor {
-            match ed.handle_key(ch) {
-                EditorAction::Continue => { serial_print(&ed.render()); }
-                EditorAction::Save => {
-                    if let Some(ref mut s) = store { save_file(s, &ed.filename, &ed.to_text()); }
-                    serial_print("[editor] Saved "); serial_print(&ed.filename); serial_print("\n");
-                    editor = None;
-                    render_desktop(&windows, focused, fb_vaddr);
-                    ps2.invalidate_cursor();
-                    print_prompt(&windows[focused]);
-                }
-                EditorAction::Quit => {
-                    editor = None;
-                    render_desktop(&windows, focused, fb_vaddr);
-                    ps2.invalidate_cursor();
-                    print_prompt(&windows[focused]);
-                }
-            }
-            continue;
-        }
+        // Editor mode removed — run_editor handles its own event loop
 
         // Code viewer mode
         if let Some(ref mut cv) = codeview {
@@ -245,14 +237,25 @@ pub fn run(ps2: &mut Ps2, mut store: Option<Storage>, mut net: Option<crate::net
             continue;
         }
 
-        // F1=editor  F2=markout  F3=browser  F4=code  F5=convergence  F6=form
+        // F1=editor  F2=markout  F3=browser  F4=code  F5=convergence  F6=form  F7=storybook
         match ch {
-            ps2::KEY_F1 => { let ed = Editor::new("untitled.txt"); serial_print(&ed.render()); editor = Some(ed); ps2.invalidate_cursor(); continue; }
-            ps2::KEY_F2 => { let ed = Editor::new("untitled.md"); serial_print(&ed.render()); editor = Some(ed); ps2.invalidate_cursor(); continue; }
+            ps2::KEY_F1 => {
+                if let Some(text) = editor::run_editor(ps2, fb_vaddr, "untitled.txt", None) {
+                    if let Some(ref mut s) = store { save_file(s, "untitled.txt", &text); }
+                }
+                render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue;
+            }
+            ps2::KEY_F2 => {
+                if let Some(text) = editor::run_editor(ps2, fb_vaddr, "untitled.md", None) {
+                    if let Some(ref mut s) = store { save_file(s, "untitled.md", &text); }
+                }
+                render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue;
+            }
             ps2::KEY_F3 => { browser::run_with_ps2(ps2, &mut store, &mut net); render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue; }
             ps2::KEY_F4 => { let cv = CodeView::new(DEMO_SOURCE, DEMO_OUTPUT); serial_print(&cv.render()); codeview = Some(cv); ps2.invalidate_cursor(); continue; }
             ps2::KEY_F5 => { convergence::run_with_ps2(ps2); render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue; }
             ps2::KEY_F6 => { run_form(ps2, fb_vaddr); render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue; }
+            ps2::KEY_F7 => { storybook::run(ps2, fb_vaddr); render_desktop(&windows, focused, fb_vaddr); ps2.invalidate_cursor(); print_prompt(&windows[focused]); continue; }
             _ => {}
         }
 
@@ -472,13 +475,14 @@ fn draw_button_bar(fb_vaddr: u64) {
     fill(vga, 0, bar_y, w, bar_h, Color::rgb(45, 45, 45));
 
     // Buttons: x, width, label, color
-    let buttons: [(usize, usize, &str, Color); 6] = [
-        (8,   72,  "Editor",  Color::rgb(59, 130, 246)),
-        (84,  80,  "Markout", Color::rgb(16, 185, 129)),
-        (168, 76,  "Browser", Color::rgb(245, 158, 11)),
-        (248, 56,  "Code",    Color::rgb(139, 92, 246)),
-        (308, 56,  "Form",    Color::rgb(236, 72, 153)),
-        (368, 56,  "Save",    Color::rgb(107, 114, 128)),
+    let buttons: [(usize, usize, &str, Color); 7] = [
+        (8,   72,  "Editor",    Color::rgb(59, 130, 246)),
+        (84,  80,  "Markout",   Color::rgb(16, 185, 129)),
+        (168, 76,  "Browser",   Color::rgb(245, 158, 11)),
+        (248, 56,  "Code",      Color::rgb(139, 92, 246)),
+        (308, 56,  "Form",      Color::rgb(236, 72, 153)),
+        (368, 56,  "Save",      Color::rgb(107, 114, 128)),
+        (428, 96,  "Storybook", Color::rgb(234, 88, 12)),
     ];
 
     for (bx, bw, label, color) in &buttons {

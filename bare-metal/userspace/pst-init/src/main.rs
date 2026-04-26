@@ -14,6 +14,7 @@ mod codeview;
 mod editor;
 mod browser;
 mod convergence;
+mod storybook;
 mod vgacon;
 mod mouse;
 mod input;

@@ -37,6 +37,30 @@ static SCANCODE_TO_ASCII: [u8; 128] = {
     t
 };
 
+static SCANCODE_TO_ASCII_SHIFT: [u8; 128] = {
+    let mut t = [0u8; 128];
+    t[0x01] = 0x1B;
+    t[0x02] = b'!'; t[0x03] = b'@'; t[0x04] = b'#'; t[0x05] = b'$';
+    t[0x06] = b'%'; t[0x07] = b'^'; t[0x08] = b'&'; t[0x09] = b'*';
+    t[0x0A] = b'('; t[0x0B] = b')'; t[0x0C] = b'_'; t[0x0D] = b'+';
+    t[0x0E] = 0x08;
+    t[0x0F] = b'\t';
+    t[0x10] = b'Q'; t[0x11] = b'W'; t[0x12] = b'E'; t[0x13] = b'R';
+    t[0x14] = b'T'; t[0x15] = b'Y'; t[0x16] = b'U'; t[0x17] = b'I';
+    t[0x18] = b'O'; t[0x19] = b'P'; t[0x1A] = b'{'; t[0x1B] = b'}';
+    t[0x1C] = b'\n';
+    t[0x1E] = b'A'; t[0x1F] = b'S'; t[0x20] = b'D'; t[0x21] = b'F';
+    t[0x22] = b'G'; t[0x23] = b'H'; t[0x24] = b'J'; t[0x25] = b'K';
+    t[0x26] = b'L'; t[0x27] = b':'; t[0x28] = b'"';
+    t[0x29] = b'~';
+    t[0x2B] = b'|';
+    t[0x2C] = b'Z'; t[0x2D] = b'X'; t[0x2E] = b'C'; t[0x2F] = b'V';
+    t[0x30] = b'B'; t[0x31] = b'N'; t[0x32] = b'M'; t[0x33] = b'<';
+    t[0x34] = b'>'; t[0x35] = b'?';
+    t[0x39] = b' ';
+    t
+};
+
 pub const KEY_UP: u8 = 0x80;
 pub const KEY_DOWN: u8 = 0x81;
 pub const KEY_LEFT: u8 = 0x82;
@@ -47,10 +71,14 @@ pub const KEY_F3: u8 = 0xF3;
 pub const KEY_F4: u8 = 0xF4;
 pub const KEY_F5: u8 = 0xF5;
 pub const KEY_F6: u8 = 0xF6;
+pub const KEY_F7: u8 = 0xF7;
 
 pub enum InputEvent {
     Key(u8),
     Click { x: usize, y: usize },
+    MouseDown { x: usize, y: usize },
+    MouseUp { x: usize, y: usize },
+    MouseDrag { x: usize, y: usize },
     MouseMove { x: usize, y: usize },
 }
 
@@ -61,6 +89,7 @@ pub struct Ps2 {
     mouse_handler: seL4_CPtr,
     has_mouse: bool,
     kb_extended: bool,
+    shift_held: bool,
     mouse_packet: [u8; 3],
     mouse_idx: u8,
     mouse_x: i32,
@@ -70,6 +99,12 @@ pub struct Ps2 {
     cursor_x: i32,
     cursor_y: i32,
     cursor_drawn: bool,
+    mouse_btn_down: bool,
+    drag_anchor_x: i32,
+    drag_anchor_y: i32,
+    drag_rect_drawn: bool,
+    drag_last_x: i32,
+    drag_last_y: i32,
 }
 
 pub fn setup(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) -> Option<Ps2> {
@@ -158,10 +193,11 @@ pub fn setup(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) 
 
     Some(Ps2 {
         port_cap, notif, kb_handler, mouse_handler,
-        has_mouse, kb_extended: false,
+        has_mouse, kb_extended: false, shift_held: false,
         mouse_packet: [0; 3], mouse_idx: 0,
         mouse_x: SCREEN_W / 2, mouse_y: SCREEN_H / 2,
-        fb_vaddr, saved_bg: [0; 16 * 16 * 4], cursor_x: -1, cursor_y: -1, cursor_drawn: false,
+        fb_vaddr, saved_bg: [0; 16 * 16 * 4], cursor_x: -1, cursor_y: -1, cursor_drawn: false, mouse_btn_down: false,
+        drag_anchor_x: 0, drag_anchor_y: 0, drag_rect_drawn: false, drag_last_x: 0, drag_last_y: 0,
     })
 }
 
@@ -204,7 +240,17 @@ impl Ps2 {
 
     fn handle_kb_byte(&mut self, byte: u8) -> Option<InputEvent> {
         if byte == 0xE0 { self.kb_extended = true; return None; }
-        if byte & 0x80 != 0 { self.kb_extended = false; return None; }
+
+        // Key release (bit 7 set)
+        if byte & 0x80 != 0 {
+            let released = byte & 0x7F;
+            if released == 0x2A || released == 0x36 { self.shift_held = false; }
+            self.kb_extended = false;
+            return None;
+        }
+
+        // Shift press
+        if byte == 0x2A || byte == 0x36 { self.shift_held = true; return None; }
 
         if self.kb_extended {
             self.kb_extended = false;
@@ -213,6 +259,7 @@ impl Ps2 {
                 0x50 => Some(InputEvent::Key(KEY_DOWN)),
                 0x4B => Some(InputEvent::Key(KEY_LEFT)),
                 0x4D => Some(InputEvent::Key(KEY_RIGHT)),
+                0x53 => Some(InputEvent::Key(0x7F)), // Delete key
                 _ => None,
             };
         }
@@ -224,10 +271,12 @@ impl Ps2 {
             0x3E => return Some(InputEvent::Key(KEY_F4)),
             0x3F => return Some(InputEvent::Key(KEY_F5)),
             0x40 => return Some(InputEvent::Key(KEY_F6)),
+            0x41 => return Some(InputEvent::Key(KEY_F7)),
             _ => {}
         }
 
-        let ascii = SCANCODE_TO_ASCII[byte as usize & 0x7F];
+        let table = if self.shift_held { &SCANCODE_TO_ASCII_SHIFT } else { &SCANCODE_TO_ASCII };
+        let ascii = table[byte as usize & 0x7F];
         if ascii != 0 { Some(InputEvent::Key(ascii)) } else { None }
     }
 
@@ -248,15 +297,85 @@ impl Ps2 {
 
         self.draw_cursor();
 
-        if self.mouse_packet[0] & 0x01 != 0 {
-            Some(InputEvent::Click { x: self.mouse_x as usize, y: self.mouse_y as usize })
+        let btn_now = self.mouse_packet[0] & 0x01 != 0;
+        let was_down = self.mouse_btn_down;
+        self.mouse_btn_down = btn_now;
+        let pos = (self.mouse_x as usize, self.mouse_y as usize);
+
+        if btn_now && !was_down {
+            self.drag_anchor_x = self.mouse_x;
+            self.drag_anchor_y = self.mouse_y;
+            self.drag_last_x = self.mouse_x;
+            self.drag_last_y = self.mouse_y;
+            Some(InputEvent::MouseDown { x: pos.0, y: pos.1 })
+        } else if !btn_now && was_down {
+            Some(InputEvent::Click { x: pos.0, y: pos.1 })
+        } else if btn_now && was_down && (dx != 0 || dy != 0) {
+            self.drag_last_x = self.mouse_x;
+            self.drag_last_y = self.mouse_y;
+            Some(InputEvent::MouseDrag { x: pos.0, y: pos.1 })
         } else {
-            None // move events don't block the loop
+            None
         }
     }
 
     pub fn invalidate_cursor(&mut self) {
         self.cursor_drawn = false;
+    }
+
+    pub fn drag_rect(&self) -> Option<(usize, usize, usize, usize)> {
+        if !self.mouse_btn_down { return None; }
+        let x0 = self.drag_anchor_x.min(self.drag_last_x) as usize;
+        let y0 = self.drag_anchor_y.min(self.drag_last_y) as usize;
+        let x1 = self.drag_anchor_x.max(self.drag_last_x) as usize;
+        let y1 = self.drag_anchor_y.max(self.drag_last_y) as usize;
+        if x1 - x0 > 4 || y1 - y0 > 4 {
+            Some((x0, y0, x1, y1))
+        } else {
+            None
+        }
+    }
+
+    pub fn drag_anchor(&self) -> (usize, usize) {
+        (self.drag_anchor_x as usize, self.drag_anchor_y as usize)
+    }
+
+    fn xor_dashed_rect(&self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        if self.fb_vaddr == 0 { return; }
+        let vga = self.fb_vaddr as *mut u8;
+
+        let left   = x0.min(x1).max(0) as usize;
+        let top    = y0.min(y1).max(0) as usize;
+        let right  = x0.max(x1).min(639) as usize;
+        let bottom = y0.max(y1).min(479) as usize;
+
+        if right - left < 3 || bottom - top < 3 { return; }
+
+        // Dashed pattern: 4px on, 4px off
+        // Top edge
+        for px in left..=right {
+            if ((px - left) / 4) % 2 == 0 {
+                xor_pixel(vga, px, top);
+            }
+        }
+        // Bottom edge
+        for px in left..=right {
+            if ((px - left) / 4) % 2 == 0 {
+                xor_pixel(vga, px, bottom);
+            }
+        }
+        // Left edge
+        for py in (top + 1)..bottom {
+            if ((py - top) / 4) % 2 == 0 {
+                xor_pixel(vga, left, py);
+            }
+        }
+        // Right edge
+        for py in (top + 1)..bottom {
+            if ((py - top) / 4) % 2 == 0 {
+                xor_pixel(vga, right, py);
+            }
+        }
     }
 
     fn draw_cursor(&mut self) {
@@ -451,6 +570,17 @@ fn xor_iris(fb_vaddr: u64, cx: usize, cy: usize) {
                     *vga.add(off + 2) ^= 0xFF;
                 }
             }
+        }
+    }
+}
+
+fn xor_pixel(vga: *mut u8, x: usize, y: usize) {
+    if x < SCREEN_W as usize && y < SCREEN_H as usize {
+        let off = (y * SCREEN_W as usize + x) * 4;
+        unsafe {
+            *vga.add(off) ^= 0x80;
+            *vga.add(off + 1) ^= 0x80;
+            *vga.add(off + 2) ^= 0x80;
         }
     }
 }
