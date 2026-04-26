@@ -13,6 +13,7 @@ pub struct Document {
     pub cursor: Cursor,
     pub selection: Option<Selection>,
     pub history: History,
+    pub pending_style: Option<char>,
 }
 
 impl Document {
@@ -22,12 +23,13 @@ impl Document {
             cursor: Cursor::origin(),
             selection: None,
             history: History::new(500),
+            pending_style: None,
         }
     }
 
     pub fn from_lines(lines: Vec<Line>) -> Self {
         let lines = if lines.is_empty() { vec![Line::new()] } else { lines };
-        Self { lines, cursor: Cursor::origin(), selection: None, history: History::new(500) }
+        Self { lines, cursor: Cursor::origin(), selection: None, history: History::new(500), pending_style: None }
     }
 
     pub fn from_text(text: &str) -> Self {
@@ -128,7 +130,10 @@ impl Document {
         Some(result)
     }
 
-    pub(crate) fn current_style_at_cursor(&self) -> char {
+    pub fn current_style_at_cursor(&self) -> char {
+        if let Some(ps) = self.pending_style {
+            return ps;
+        }
         let line = &self.lines[self.cursor.line];
         if self.cursor.col > 0 && self.cursor.col <= line.len() {
             line.get_style_at(self.cursor.col - 1)
@@ -141,7 +146,8 @@ impl Document {
 
     pub fn insert_char(&mut self, ch: char) {
         if self.selection.is_some() { self.delete_selection(); }
-        let style = self.current_style_at_cursor();
+        let style = self.pending_style.take()
+            .unwrap_or_else(|| self.current_style_at_cursor());
         let cursor = self.cursor;
         self.lines[cursor.line].insert_char(cursor.col, ch, style);
         self.cursor.col += 1;
@@ -264,7 +270,7 @@ impl Document {
 
     // === Formatting ===
 
-    pub fn apply_bold(&mut self) {
+    fn toggle_style_or_pending(&mut self, toggle_fn: fn(char) -> char) {
         if let Some(sel) = self.selection {
             let sel = sel.normalized();
             if sel.is_collapsed() || sel.is_multiline() { return; }
@@ -273,28 +279,29 @@ impl Document {
             let end = sel.end.col.min(line.len());
             let mut chars: Vec<char> = line.styles.chars().collect();
             for ch in chars.iter_mut().skip(start).take(end - start) {
-                *ch = inline::toggle_bold(*ch);
+                *ch = toggle_fn(*ch);
             }
             line.styles = chars.into_iter().collect();
+        } else {
+            let base = self.pending_style
+                .unwrap_or_else(|| self.current_style_at_cursor());
+            self.pending_style = Some(toggle_fn(base));
         }
+    }
+
+    pub fn apply_bold(&mut self) {
+        self.toggle_style_or_pending(inline::toggle_bold);
     }
 
     pub fn apply_italic(&mut self) {
-        if let Some(sel) = self.selection {
-            let sel = sel.normalized();
-            if sel.is_collapsed() || sel.is_multiline() { return; }
-            let line = &mut self.lines[sel.start.line];
-            let start = sel.start.col.min(line.len());
-            let end = sel.end.col.min(line.len());
-            let mut chars: Vec<char> = line.styles.chars().collect();
-            for ch in chars.iter_mut().skip(start).take(end - start) {
-                *ch = inline::toggle_italic(*ch);
-            }
-            line.styles = chars.into_iter().collect();
-        }
+        self.toggle_style_or_pending(inline::toggle_italic);
     }
 
     pub fn apply_code(&mut self) {
+        self.toggle_style_or_pending(inline::toggle_code);
+    }
+
+    pub fn apply_strikethrough(&mut self) {
         if let Some(sel) = self.selection {
             let sel = sel.normalized();
             if sel.is_collapsed() || sel.is_multiline() { return; }
@@ -303,9 +310,15 @@ impl Document {
             let end = sel.end.col.min(line.len());
             let mut chars: Vec<char> = line.styles.chars().collect();
             for ch in chars.iter_mut().skip(start).take(end - start) {
-                *ch = inline::toggle_code(*ch);
+                *ch = if inline::is_strikethrough(*ch) { inline::PLAIN } else { inline::STRIKETHROUGH };
             }
             line.styles = chars.into_iter().collect();
+        } else {
+            let cur = self.pending_style
+                .unwrap_or_else(|| self.current_style_at_cursor());
+            self.pending_style = Some(
+                if inline::is_strikethrough(cur) { inline::PLAIN } else { inline::STRIKETHROUGH }
+            );
         }
     }
 

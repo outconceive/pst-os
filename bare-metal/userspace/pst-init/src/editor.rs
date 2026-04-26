@@ -64,10 +64,10 @@ impl Editor {
             ps2::KEY_F2 => { self.doc.set_heading(2); }
             ps2::KEY_F3 => { self.doc.set_heading(3); }
 
-            0x48 => self.doc.move_cursor_up(),     // up arrow
-            0x50 => self.doc.move_cursor_down(),   // down arrow
-            0x4B => self.doc.move_cursor_left(),    // left arrow
-            0x4D => self.doc.move_cursor_right(),   // right arrow
+            ps2::KEY_UP => self.doc.move_cursor_up(),
+            ps2::KEY_DOWN => self.doc.move_cursor_down(),
+            ps2::KEY_LEFT => self.doc.move_cursor_left(),
+            ps2::KEY_RIGHT => self.doc.move_cursor_right(),
 
             b'\n' => { self.doc.insert_newline(); }
 
@@ -102,7 +102,7 @@ impl Editor {
             ToolbarAction::Bold => self.doc.apply_bold(),
             ToolbarAction::Italic => self.doc.apply_italic(),
             ToolbarAction::Code => self.doc.apply_code(),
-            ToolbarAction::Strikethrough => {}
+            ToolbarAction::Strikethrough => self.doc.apply_strikethrough(),
             ToolbarAction::ClearFormat => self.doc.clear_formatting(),
             ToolbarAction::UnorderedList => self.doc.set_list(),
             ToolbarAction::OrderedList => self.doc.set_ordered_list(),
@@ -262,13 +262,19 @@ impl Editor {
 
     fn is_button_active(&self, action: ToolbarAction) -> bool {
         let line = &self.doc.lines[self.doc.cursor.line];
+        let cursor_style = self.doc.current_style_at_cursor();
         match action {
             ToolbarAction::Heading(level) => {
                 line.meta.format == block::HEADING && line.meta.level == level
             }
+            ToolbarAction::Bold => inline::is_bold(cursor_style),
+            ToolbarAction::Italic => inline::is_italic(cursor_style),
+            ToolbarAction::Code => inline::is_code(cursor_style),
+            ToolbarAction::Strikethrough => inline::is_strikethrough(cursor_style),
             ToolbarAction::UnorderedList => line.meta.format == block::LIST_UNORDERED,
             ToolbarAction::OrderedList => line.meta.format == block::LIST_ORDERED,
             ToolbarAction::Quote => line.meta.format == block::QUOTE,
+            ToolbarAction::DarkMode => self.dark_mode,
             _ => false,
         }
     }
