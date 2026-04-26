@@ -100,6 +100,8 @@ pub struct Ps2 {
     cursor_y: i32,
     cursor_drawn: bool,
     mouse_btn_down: bool,
+    pub hover_rects: [(usize, usize, usize, usize); 8],
+    pub hover_rect_count: usize,
     drag_anchor_x: i32,
     drag_anchor_y: i32,
     drag_rect_drawn: bool,
@@ -194,6 +196,7 @@ pub fn setup(bootinfo: *const seL4_BootInfo, mut next_slot: u64, fb_vaddr: u64) 
     Some(Ps2 {
         port_cap, notif, kb_handler, mouse_handler,
         has_mouse, kb_extended: false, shift_held: false,
+        hover_rects: [(0,0,0,0); 8], hover_rect_count: 0,
         mouse_packet: [0; 3], mouse_idx: 0,
         mouse_x: SCREEN_W / 2, mouse_y: SCREEN_H / 2,
         fb_vaddr, saved_bg: [0; 16 * 16 * 4], cursor_x: -1, cursor_y: -1, cursor_drawn: false, mouse_btn_down: false,
@@ -314,13 +317,23 @@ impl Ps2 {
             self.drag_last_x = self.mouse_x;
             self.drag_last_y = self.mouse_y;
             Some(InputEvent::MouseDrag { x: pos.0, y: pos.1 })
+        } else if !btn_now && (dx != 0 || dy != 0) {
+            Some(InputEvent::MouseMove { x: pos.0, y: pos.1 })
         } else {
             None
         }
     }
 
+    pub fn mouse_x(&self) -> i32 { self.mouse_x }
+    pub fn mouse_y(&self) -> i32 { self.mouse_y }
+
     pub fn invalidate_cursor(&mut self) {
         self.cursor_drawn = false;
+    }
+
+    pub fn redraw_cursor(&mut self) {
+        self.cursor_drawn = false;
+        self.draw_cursor();
     }
 
     pub fn drag_rect(&self) -> Option<(usize, usize, usize, usize)> {
@@ -430,8 +443,14 @@ impl Ps2 {
         }
 
         // 3. Draw cursor — ring + iris
-        let over_button = ny >= 448 && ((nx >= 8 && nx < 80) || (nx >= 84 && nx < 164) ||
-            (nx >= 168 && nx < 244) || (nx >= 248 && nx < 304) || (nx >= 308 && nx < 364) || (nx >= 368 && nx < 424));
+        let mut over_button = false;
+        for i in 0..self.hover_rect_count {
+            let (hx0, hy0, hx1, hy1) = self.hover_rects[i];
+            if nx >= hx0 && nx < hx1 && ny >= hy0 && ny < hy1 {
+                over_button = true;
+                break;
+            }
+        }
         let (ir, ig, ib) = if over_button {
             (50u8, 255u8, 100u8) // bright green = go
         } else {

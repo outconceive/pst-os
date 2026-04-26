@@ -509,6 +509,7 @@ pub fn run_editor(ps2: &mut Ps2, fb_vaddr: u64, filename: &str, initial_text: Op
 
         let vga = fb_vaddr as *mut u8;
         unsafe { core::ptr::copy_nonoverlapping(fb.pixels.as_ptr(), vga, 640 * 4 * 480); }
+        ps2.redraw_cursor();
 
         match ps2.read_event() {
             InputEvent::Key(ch) => {

@@ -8,6 +8,7 @@ const ROWS: usize = HEIGHT / GLYPH_HEIGHT;
 
 static mut VGACON: VgaCon = VgaCon {
     fb_vaddr: 0,
+    enabled: true,
     cursor_col: 0,
     cursor_row: 0,
     fg: Color::WHITE,
@@ -29,6 +30,7 @@ enum EscState {
 
 pub struct VgaCon {
     fb_vaddr: u64,
+    enabled: bool,
     cursor_col: usize,
     cursor_row: usize,
     fg: Color,
@@ -70,9 +72,13 @@ pub fn clear() {
     }
 }
 
+pub fn set_enabled(enabled: bool) {
+    unsafe { VGACON.enabled = enabled; }
+}
+
 pub fn putchar(c: u8) {
     unsafe {
-        if VGACON.fb_vaddr == 0 { return; }
+        if VGACON.fb_vaddr == 0 || !VGACON.enabled { return; }
 
         // UTF-8 multi-byte handling
         if VGACON.utf8_expected > 0 {

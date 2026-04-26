@@ -484,6 +484,7 @@ pub fn run(ps2: &mut Ps2, fb_vaddr: u64) {
         // Blit
         let vga = fb_vaddr as *mut u8;
         unsafe { core::ptr::copy_nonoverlapping(fb.pixels.as_ptr(), vga, 640 * 4 * 480); }
+        ps2.redraw_cursor();
 
         // Input
         match ps2.read_event() {
