@@ -155,6 +155,29 @@ impl StateStore {
     pub fn contains(&self, key: &str) -> bool {
         self.values.contains_key(key)
     }
+
+    pub fn interpolate(&self, text: &str) -> String {
+        let chars: Vec<char> = text.chars().collect();
+        let len = chars.len();
+        let mut result = String::with_capacity(len);
+        let mut i = 0;
+
+        while i < len {
+            if chars[i] == '{' {
+                if let Some(close) = chars[i + 1..].iter().position(|&c| c == '}') {
+                    let key: String = chars[i + 1..i + 1 + close].iter().collect();
+                    if !key.is_empty() && !key.contains(' ') && !key.contains(':') {
+                        result.push_str(&self.get_text(&key));
+                        i += close + 2;
+                        continue;
+                    }
+                }
+            }
+            result.push(chars[i]);
+            i += 1;
+        }
+        result
+    }
 }
 
 #[cfg(test)]
@@ -212,6 +235,47 @@ mod tests {
         s.remove_list_item("items", 0);
         assert_eq!(s.get_list_count("items"), 1);
         assert_eq!(s.get_scoped_text("items.0", "name"), "Banana");
+    }
+
+    #[test]
+    fn test_interpolate_single_key() {
+        let mut s = StateStore::new();
+        s.set_text("name", "Alice");
+        assert_eq!(s.interpolate("Hello {name}"), "Hello Alice");
+    }
+
+    #[test]
+    fn test_interpolate_multiple_keys() {
+        let mut s = StateStore::new();
+        s.set_text("first", "Alice");
+        s.set_text("last", "Smith");
+        assert_eq!(s.interpolate("{first} {last}"), "Alice Smith");
+    }
+
+    #[test]
+    fn test_interpolate_missing_key() {
+        let s = StateStore::new();
+        assert_eq!(s.interpolate("Hello {name}"), "Hello ");
+    }
+
+    #[test]
+    fn test_interpolate_number() {
+        let mut s = StateStore::new();
+        s.set_number("count", 42.0);
+        assert_eq!(s.interpolate("Items: {count}"), "Items: 42");
+    }
+
+    #[test]
+    fn test_interpolate_no_placeholders() {
+        let s = StateStore::new();
+        assert_eq!(s.interpolate("plain text"), "plain text");
+    }
+
+    #[test]
+    fn test_interpolate_skips_component_syntax() {
+        let mut s = StateStore::new();
+        s.set_text("name", "Alice");
+        assert_eq!(s.interpolate("{label:title}"), "{label:title}");
     }
 
     #[test]

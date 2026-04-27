@@ -7,3 +7,4 @@ pub mod table;
 pub mod offset;
 pub mod constraint;
 pub mod solver;
+pub mod concurrent;

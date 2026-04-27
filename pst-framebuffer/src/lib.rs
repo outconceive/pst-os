@@ -15,6 +15,16 @@ use pst_markout::render;
 
 use font::{GLYPH_WIDTH, GLYPH_HEIGHT};
 
+const TILE_SIZE: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DirtyRect {
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Color {
     pub r: u8,
@@ -37,25 +47,38 @@ pub struct Framebuffer {
     pub width: usize,
     pub height: usize,
     pub stride: usize,
+    tiles_x: usize,
+    tiles_y: usize,
+    dirty_tiles: Vec<bool>,
 }
 
 impl Framebuffer {
     pub fn new(width: usize, height: usize) -> Self {
         let stride = width * 4; // 32bpp BGRA
+        let tiles_x = (width + TILE_SIZE - 1) / TILE_SIZE;
+        let tiles_y = (height + TILE_SIZE - 1) / TILE_SIZE;
         Self {
             pixels: alloc::vec![0u8; stride * height],
             width,
             height,
             stride,
+            tiles_x,
+            tiles_y,
+            dirty_tiles: alloc::vec![false; tiles_x * tiles_y],
         }
     }
 
     pub fn clear(&mut self, color: Color) {
         for y in 0..self.height {
             for x in 0..self.width {
-                self.set_pixel(x, y, color);
+                let offset = y * self.stride + x * 4;
+                self.pixels[offset] = color.b;
+                self.pixels[offset + 1] = color.g;
+                self.pixels[offset + 2] = color.r;
+                self.pixels[offset + 3] = 0xFF;
             }
         }
+        for tile in self.dirty_tiles.iter_mut() { *tile = true; }
     }
 
     #[inline]
@@ -66,6 +89,30 @@ impl Framebuffer {
         self.pixels[offset + 1] = color.g;
         self.pixels[offset + 2] = color.r;
         self.pixels[offset + 3] = 0xFF;
+        let tx = x / TILE_SIZE;
+        let ty = y / TILE_SIZE;
+        self.dirty_tiles[ty * self.tiles_x + tx] = true;
+    }
+
+    pub fn take_dirty_regions(&mut self) -> Vec<DirtyRect> {
+        let mut regions = Vec::new();
+        for ty in 0..self.tiles_y {
+            for tx in 0..self.tiles_x {
+                if self.dirty_tiles[ty * self.tiles_x + tx] {
+                    let rx = tx * TILE_SIZE;
+                    let ry = ty * TILE_SIZE;
+                    let rw = TILE_SIZE.min(self.width - rx);
+                    let rh = TILE_SIZE.min(self.height - ry);
+                    regions.push(DirtyRect { x: rx, y: ry, w: rw, h: rh });
+                }
+            }
+        }
+        for tile in self.dirty_tiles.iter_mut() { *tile = false; }
+        regions
+    }
+
+    pub fn has_dirty(&self) -> bool {
+        self.dirty_tiles.iter().any(|&d| d)
     }
 
     pub fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: Color) {
@@ -759,6 +806,54 @@ mod tests {
             .filter(|p| p[0] != 30 || p[1] != 30 || p[2] != 30)
             .count();
         assert!(non_bg > 100, "expected rendered pixels, got {}", non_bg);
+    }
+
+    #[test]
+    fn test_dirty_tracking_after_clear() {
+        let mut fb = Framebuffer::new(128, 128);
+        assert!(!fb.has_dirty());
+        fb.clear(Color::BLACK);
+        assert!(fb.has_dirty());
+        let regions = fb.take_dirty_regions();
+        assert!(!regions.is_empty());
+        assert!(!fb.has_dirty());
+    }
+
+    #[test]
+    fn test_dirty_tracking_single_pixel() {
+        let mut fb = Framebuffer::new(128, 128);
+        fb.set_pixel(10, 10, Color::WHITE);
+        let regions = fb.take_dirty_regions();
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0], DirtyRect { x: 0, y: 0, w: 32, h: 32 });
+    }
+
+    #[test]
+    fn test_dirty_tracking_multiple_tiles() {
+        let mut fb = Framebuffer::new(128, 128);
+        fb.set_pixel(10, 10, Color::WHITE);
+        fb.set_pixel(70, 80, Color::WHITE);
+        let regions = fb.take_dirty_regions();
+        assert_eq!(regions.len(), 2);
+    }
+
+    #[test]
+    fn test_dirty_cleared_after_take() {
+        let mut fb = Framebuffer::new(128, 128);
+        fb.set_pixel(10, 10, Color::WHITE);
+        fb.take_dirty_regions();
+        assert!(!fb.has_dirty());
+        let regions = fb.take_dirty_regions();
+        assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn test_dirty_only_touched_tiles() {
+        let mut fb = Framebuffer::new(256, 256);
+        fb.draw_text(0, 0, "Hi", Color::WHITE, Color::BLACK);
+        let regions = fb.take_dirty_regions();
+        let total_tiles = (256 / 32) * (256 / 32);
+        assert!(regions.len() < total_tiles, "only touched tiles should be dirty");
     }
 
     #[test]

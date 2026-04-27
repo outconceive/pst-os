@@ -5,19 +5,45 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::parse::{self, Line, LineType};
+use crate::state::StateStore;
 use crate::vnode::VNode;
 
 use libpst::constraint::{Constraint, GapValue};
 
 pub fn render(lines: &[Line]) -> VNode {
-    render_with_state(lines, &crate::state::StateStore::new())
+    render_with_state(lines, &StateStore::new())
 }
 
-pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VNode {
+const CUSTOM_CONTAINERS: &[&str] = &[
+    "grid", "table", "pie", "bar", "line", "deck", "diagram", "sheet", "parallax",
+];
+
+fn is_custom_container(tag: &str) -> bool {
+    CUSTOM_CONTAINERS.contains(&tag)
+}
+
+fn dispatch_custom(tag: &str, config: &str, raw_lines: &[String]) -> VNode {
+    let line_refs: Vec<&str> = raw_lines.iter().map(|s| s.as_str()).collect();
+    match tag {
+        "grid" => crate::grid::render_grid(config, &line_refs),
+        "table" => crate::table::render_table(config, &line_refs),
+        "pie" => crate::chart::render_pie(config, &line_refs),
+        "bar" => crate::chart::render_bar(config, &line_refs),
+        "line" => crate::chart::render_line(config, &line_refs),
+        "deck" => crate::deck::render_deck(config, &line_refs),
+        "diagram" => crate::diagram::render_diagram(config, &line_refs),
+        "sheet" => crate::sheet::render_sheet(config, &line_refs),
+        "parallax" => crate::parallax::render_parallax(config, &line_refs),
+        _ => VNode::text(""),
+    }
+}
+
+pub fn render_with_state(lines: &[Line], state: &StateStore) -> VNode {
     let mut root_children = Vec::new();
     let mut container_stack: Vec<(String, BTreeMap<String, String>, Vec<VNode>)> = Vec::new();
     let mut each_stack: Vec<(String, Vec<Line>)> = Vec::new();
     let mut parametric_stack: Vec<(BTreeMap<String, String>, Vec<Line>)> = Vec::new();
+    let mut custom_stack: Vec<(String, String, Vec<String>)> = Vec::new(); // (tag, config, raw_lines)
 
     for line in lines {
         // Collecting template lines inside @each
@@ -34,7 +60,7 @@ pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VN
                         for ch in scoped_line.state_keys.chars() {
                             new_keys.push(ch);
                         }
-                        let row = render_line(&scoped_line);
+                        let row = render_line(&scoped_line, state);
                         if let Some(parent) = container_stack.last_mut() {
                             parent.2.push(row);
                         } else {
@@ -55,6 +81,29 @@ pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VN
         if line.is_each_start() {
             let key = line.tag.as_deref().unwrap_or("").to_string();
             each_stack.push((key, Vec::new()));
+            continue;
+        }
+
+        // Collecting inside custom containers (grid, table, chart, etc.)
+        if !custom_stack.is_empty() {
+            if line.line_type == LineType::ContainerEnd {
+                let end_tag = line.tag.as_deref().unwrap_or("");
+                if custom_stack.last().map(|(t, _, _)| t.as_str()) == Some(end_tag) {
+                    let (tag, config, raw_lines) = custom_stack.pop().unwrap();
+                    let node = dispatch_custom(&tag, &config, &raw_lines);
+                    if let Some(parent) = container_stack.last_mut() {
+                        parent.2.push(node);
+                    } else if let Some(parent_custom) = custom_stack.last_mut() {
+                        // Nested custom: shouldn't happen often but handle it
+                        parent_custom.2.push(format!("@end {}", end_tag));
+                    } else {
+                        root_children.push(node);
+                    }
+                    continue;
+                }
+            }
+            // Collect raw content
+            custom_stack.last_mut().unwrap().2.push(String::from(line.content.trim()));
             continue;
         }
 
@@ -83,6 +132,39 @@ pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VN
                 let mut attrs = BTreeMap::new();
                 attrs.insert(String::from("class"), String::from("mc-parametric"));
                 parametric_stack.push((attrs, Vec::new()));
+                continue;
+            }
+
+            if tag == "transition" {
+                let config = line.config.as_deref().unwrap_or("");
+                if let Some(t) = crate::transition::parse_transition(config) {
+                    let node = crate::transition::transition_to_vnode(&t);
+                    if let Some(parent) = container_stack.last_mut() {
+                        parent.2.push(node);
+                    } else {
+                        root_children.push(node);
+                    }
+                }
+                continue;
+            }
+
+            if tag == "place" {
+                let config = line.config.as_deref().unwrap_or("");
+                let style = crate::grid::placement_style(config, 800, 600, 200, 100);
+                let mut attrs = BTreeMap::new();
+                attrs.insert(String::from("class"), String::from("mc-place"));
+                attrs.insert(String::from("style"), style);
+                if let Some(parent) = container_stack.last_mut() {
+                    parent.2.push(VNode::element_with_attrs("div", attrs, Vec::new()));
+                } else {
+                    root_children.push(VNode::element_with_attrs("div", attrs, Vec::new()));
+                }
+                continue;
+            }
+
+            if is_custom_container(tag) {
+                let config = line.config.as_deref().unwrap_or("").to_string();
+                custom_stack.push((String::from(tag), config, Vec::new()));
                 continue;
             }
 
@@ -125,7 +207,7 @@ pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VN
             continue;
         }
 
-        let row = render_line(line);
+        let row = render_line(line, state);
         if let Some(parent) = container_stack.last_mut() {
             parent.2.push(row);
         } else {
@@ -138,7 +220,7 @@ pub fn render_with_state(lines: &[Line], state: &crate::state::StateStore) -> VN
     VNode::element_with_attrs("div", root_attrs, root_children)
 }
 
-fn render_line(line: &Line) -> VNode {
+fn render_line(line: &Line, state: &StateStore) -> VNode {
     let mut children = Vec::new();
     let content: Vec<char> = line.content.chars().collect();
     let comps: Vec<char> = line.components.chars().collect();
@@ -156,7 +238,8 @@ fn render_line(line: &Line) -> VNode {
             i += 1;
             while i < len && comps.get(i) == Some(&comp) { i += 1; }
 
-            let span_content: String = content[start..i].iter().collect();
+            let raw_content: String = content[start..i].iter().collect();
+            let span_content = state.interpolate(&raw_content);
             let span_key: String = keys[start..i.min(keys.len())].iter().collect::<String>()
                 .trim_matches('_').to_string();
             let style_char = *styles.get(start).unwrap_or(&' ');
@@ -544,6 +627,47 @@ fn semantic_tag(tag: &str) -> &str {
 mod tests {
     use super::*;
     use crate::parse;
+    use crate::state::StateStore;
+
+    #[test]
+    fn test_interpolation_in_label() {
+        let mut state = StateStore::new();
+        state.set_text("name", "Alice");
+        let lines = parse::parse("| Hello {name}!");
+        let vdom = render_with_state(&lines, &state);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("Hello Alice!"));
+        assert!(!html.contains("{name}"));
+    }
+
+    #[test]
+    fn test_interpolation_in_button() {
+        let mut state = StateStore::new();
+        state.set_text("action", "Save");
+        let lines = parse::parse("| {button:go \"{action} Now\"}");
+        let vdom = render_with_state(&lines, &state);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("Save Now"));
+    }
+
+    #[test]
+    fn test_interpolation_multiple_keys() {
+        let mut state = StateStore::new();
+        state.set_text("first", "Alice");
+        state.set_text("last", "Smith");
+        let lines = parse::parse("| Welcome {first} {last}");
+        let vdom = render_with_state(&lines, &state);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("Welcome Alice Smith"));
+    }
+
+    #[test]
+    fn test_no_interpolation_without_state() {
+        let lines = parse::parse("| Hello {name}!");
+        let vdom = render(&lines);
+        let html = crate::html::to_html(&vdom);
+        assert!(html.contains("Hello !"));
+    }
 
     #[test]
     fn test_render_label() {

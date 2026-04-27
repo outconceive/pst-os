@@ -348,7 +348,8 @@ fn parse_component(chars: &[char], start: usize) -> Option<(ParsedComponent, usi
         "badge" => BADGE,
         "progress" => PROGRESS,
         "sparkline" => SPARKLINE,
-        _ => LABEL,
+        _ if binding.is_some() => LABEL,
+        _ => return None,
     };
 
     let mut label = String::new();
